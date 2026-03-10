@@ -14,6 +14,14 @@ const { title = 'Etsy Scout' } = Astro.props;
     <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
+    <!-- Open Graph -->
+    <meta property="og:title" content="Etsy Scout" />
+    <meta property="og:description" content="Market research for 3D print &amp; laser cut Etsy sellers. Search live listings, analyse price distribution and spot popular products." />
+    <meta property="og:image" content="https://etsyscout.netlify.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="https://etsyscout.netlify.app/" />
+    <meta property="og:type" content="website" />
     <!-- Apply saved theme before paint to prevent flash -->
     <script is:inline>
       const saved = localStorage.getItem('theme');
