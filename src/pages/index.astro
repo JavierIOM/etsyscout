@@ -116,9 +116,11 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
 <Layout title={query ? `Etsy Scout — ${query}` : 'Etsy Scout'}>
   <!-- Header -->
-  <header class="border-b border-slate-800 px-6 py-4 flex items-center gap-4">
+  <header class="border-b border-slate-800 px-6 py-5 flex items-center gap-4">
     <div>
-      <h1 class="text-lg font-bold tracking-tight text-white">Etsy Scout</h1>
+      <h1 class="text-lg font-bold tracking-tight text-white">
+        <span class="text-orange-500">›</span> Etsy Scout
+      </h1>
       <p class="text-xs text-slate-500">Market research for 3D print &amp; laser cut sellers</p>
     </div>
   </header>
@@ -128,8 +130,10 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
     <!-- Search form -->
     <form method="GET" class="space-y-4">
       <div class="flex gap-3">
+        <label for="q" class="sr-only">Search Etsy listings</label>
         <input
           type="text"
+          id="q"
           name="q"
           value={query}
           placeholder="Search Etsy listings..."
@@ -147,18 +151,38 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
       <!-- Filters row -->
       <div class="flex flex-wrap gap-4 items-center text-sm">
         <div class="flex items-center gap-2">
-          <label class="text-slate-400 text-xs uppercase tracking-wider">Sort</label>
-          <select name="sort" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500">
+          <label for="sort" class="text-slate-400 text-xs uppercase tracking-wider">Sort</label>
+          <select id="sort" name="sort" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
             <option value="score" selected={sortBy === 'score'}>Relevance</option>
             <option value="created" selected={sortBy === 'created'}>Newest</option>
             <option value="price" selected={sortBy === 'price'}>Price</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
-          <label class="text-slate-400 text-xs uppercase tracking-wider">Price</label>
-          <input type="number" name="min" value={minPrice} placeholder="Min £" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500" />
+          <span class="text-slate-400 text-xs uppercase tracking-wider">Price</span>
+          <span class="text-slate-500 text-sm">£</span>
+          <label for="min" class="sr-only">Minimum price</label>
+          <input
+            type="number"
+            id="min"
+            name="min"
+            value={minPrice}
+            placeholder="Min"
+            min="0"
+            class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          />
           <span class="text-slate-600">—</span>
-          <input type="number" name="max" value={maxPrice} placeholder="Max £" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500" />
+          <span class="text-slate-500 text-sm">£</span>
+          <label for="max" class="sr-only">Maximum price</label>
+          <input
+            type="number"
+            id="max"
+            name="max"
+            value={maxPrice}
+            placeholder="Max"
+            min="0"
+            class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          />
         </div>
       </div>
     </form>
@@ -198,7 +222,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             { label: 'Price range', value: `${fmt(minPriceFound)} – ${fmt(maxPriceFound)}` },
             { label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() },
           ].map(({ label, value }) => (
-            <div class="bg-slate-900 border border-slate-800 rounded p-4">
+            <div class="bg-slate-900 border border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
               <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">{label}</p>
               <p class="text-xl font-bold text-white">{value}</p>
             </div>
@@ -207,16 +231,16 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
         <!-- Price histogram -->
         <div class="bg-slate-900 border border-slate-800 rounded p-6">
-          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Price Distribution</h2>
-          <div class="flex items-end gap-2 h-32">
+          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-6">Price Distribution</h2>
+          <div class="flex items-end gap-2" style="height: 10rem;">
             {histogram.map((bar) => (
-              <div class="flex-1 flex flex-col items-center gap-1">
-                <span class="text-xs text-slate-500">{bar.count}</span>
+              <div class="flex-1 flex flex-col items-center justify-end gap-1 h-full">
+                <span class="text-xs text-slate-500 leading-none">{bar.count}</span>
                 <div
                   class="w-full bg-orange-600 rounded-t transition-all"
                   style={`height: ${Math.max(bar.pct, 2)}%`}
                 ></div>
-                <span class="text-xs text-slate-500 truncate w-full text-center">{bar.label}</span>
+                <span class="text-xs text-slate-500 truncate w-full text-center leading-none pt-1">{bar.label}</span>
               </div>
             ))}
           </div>
@@ -247,6 +271,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
                         href={listing.url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        title={listing.title}
                         class="text-slate-200 hover:text-orange-400 transition-colors line-clamp-2 leading-snug"
                       >
                         <span class="text-slate-600 mr-2 tabular-nums">{i + 1}.</span>
@@ -274,8 +299,9 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
     <!-- Empty state (no query yet) -->
     {!query && (
-      <div class="text-center py-16 text-slate-600">
-        <p class="text-sm">Enter a search term or click a quick search above to get started.</p>
+      <div class="text-center py-16 border border-dashed border-slate-800 rounded">
+        <p class="text-sm text-slate-500">Pick a quick search above or type a keyword to scout the market.</p>
+        <p class="text-xs text-slate-700 mt-2">Searches return up to 100 live listings ranked by favorites.</p>
       </div>
     )}
 
