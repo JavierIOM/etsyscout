@@ -204,7 +204,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
           class={`px-3 py-1 rounded-full text-xs border transition-colors ${
             query === term
               ? 'bg-orange-600 border-orange-600 text-white'
-              : 'border-slate-300/70 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              : 'border-slate-300/70 dark:border-slate-700 text-[#595959] dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500 hover:text-[#222222] dark:hover:text-slate-300'
           }`}
         >
           {term}
@@ -309,8 +309,8 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
     <!-- Empty state (no query yet) -->
     {!query && (
       <div class="text-center py-16 border border-dashed border-[#D9D9D9] dark:border-slate-800 rounded">
-        <p class="text-sm text-slate-400 dark:text-slate-500">Pick a quick search above or type a keyword to scout the market.</p>
-        <p class="text-xs text-slate-300 dark:text-slate-700 mt-2">Searches return up to 100 live listings ranked by favorites.</p>
+        <p class="text-sm text-[#595959] dark:text-slate-500">Pick a quick search above or type a keyword to scout the market.</p>
+        <p class="text-xs text-[#595959] dark:text-slate-700 mt-2">Searches return up to 100 live listings ranked by favorites.</p>
       </div>
     )}
 
