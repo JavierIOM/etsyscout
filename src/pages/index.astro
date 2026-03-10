@@ -116,9 +116,9 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
 <Layout title={query ? `Etsy Scout — ${query}` : 'Etsy Scout'}>
   <!-- Header -->
-  <header class="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-5 flex items-center justify-between gap-4">
+  <header class="bg-white dark:bg-slate-900 border-b border-[#D9D9D9] dark:border-slate-800 px-6 py-5 flex items-center justify-between gap-4">
     <div>
-      <h1 class="text-lg font-bold tracking-tight text-slate-700 dark:text-white">
+      <h1 class="text-lg font-bold tracking-tight text-[#222222] dark:text-white">
         <span class="text-orange-500">›</span> Etsy Scout
       </h1>
       <p class="text-xs text-slate-400 dark:text-slate-500">Market research for 3D print &amp; laser cut sellers</p>
@@ -146,7 +146,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
           name="q"
           value={query}
           placeholder="Search Etsy listings..."
-          class="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-4 py-2.5 text-slate-700 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm"
+          class="flex-1 bg-white dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-4 py-2.5 text-[#222222] dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm"
           autofocus
         />
         <button
@@ -161,7 +161,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
       <div class="flex flex-wrap gap-4 items-center text-sm">
         <div class="flex items-center gap-2">
           <label for="sort" class="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Sort</label>
-          <select id="sort" name="sort" class="bg-slate-50 dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-3 py-1.5 text-slate-700 dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
+          <select id="sort" name="sort" class="bg-white dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-3 py-1.5 text-[#222222] dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
             <option value="score" selected={sortBy === 'score'}>Relevance</option>
             <option value="created" selected={sortBy === 'created'}>Newest</option>
             <option value="price" selected={sortBy === 'price'}>Price</option>
@@ -178,7 +178,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             value={minPrice}
             placeholder="Min"
             min="0"
-            class="w-20 bg-slate-50 dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-2 py-1.5 text-slate-700 dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            class="w-20 bg-white dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-2 py-1.5 text-[#222222] dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
           <span class="text-slate-400 dark:text-slate-600">—</span>
           <span class="text-slate-400 dark:text-slate-500 text-sm">£</span>
@@ -190,7 +190,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             value={maxPrice}
             placeholder="Max"
             min="0"
-            class="w-20 bg-slate-50 dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-2 py-1.5 text-slate-700 dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            class="w-20 bg-white dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-2 py-1.5 text-[#222222] dark:text-white text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
           />
         </div>
       </div>
@@ -231,16 +231,16 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             { label: 'Price range', value: `${fmt(minPriceFound)} – ${fmt(maxPriceFound)}` },
             { label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() },
           ].map(({ label, value }) => (
-            <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
+            <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
               <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
-              <p class="text-xl font-bold text-slate-700 dark:text-white">{value}</p>
+              <p class="text-xl font-bold text-[#222222] dark:text-white">{value}</p>
             </div>
           ))}
         </div>
 
         <!-- Price histogram -->
-        <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-6">
-          <h2 class="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-6">Price Distribution</h2>
+        <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6">
+          <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider mb-6">Price Distribution</h2>
           <div class="flex items-end gap-2" style="height: 10rem;">
             {histogram.map((bar) => (
               <div class="flex-1 flex flex-col items-center justify-end gap-1 h-full">
@@ -256,15 +256,15 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
         </div>
 
         <!-- Top listings table -->
-        <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-            <h2 class="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+        <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded overflow-hidden">
+          <div class="px-6 py-4 border-b border-[#D9D9D9] dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">
               Top {topListings.length} Listings by Favorites
             </h2>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="border-b border-slate-200 dark:border-slate-800">
+              <thead class="border-b border-[#D9D9D9] dark:border-slate-800">
                 <tr class="text-left">
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider">Title</th>
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Price</th>
@@ -272,9 +272,9 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Views</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody class="divide-y divide-[#D9D9D9] dark:divide-slate-800">
                 {topListings.map((listing, i) => (
-                  <tr class="hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors">
+                  <tr class="hover:bg-[#FAF7F4] dark:hover:bg-slate-800/50 transition-colors">
                     <td class="px-6 py-3">
                       <a
                         href={listing.url}
@@ -290,7 +290,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
                     <td class="px-6 py-3 text-right font-mono font-semibold text-green-600 dark:text-green-400">
                       {fmt(getPrice(listing))}
                     </td>
-                    <td class="px-6 py-3 text-right text-slate-600 dark:text-slate-300">
+                    <td class="px-6 py-3 text-right text-[#595959] dark:text-slate-300">
                       {listing.num_favorers.toLocaleString()}
                     </td>
                     <td class="px-6 py-3 text-right text-slate-400 dark:text-slate-500">
@@ -308,7 +308,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
     <!-- Empty state (no query yet) -->
     {!query && (
-      <div class="text-center py-16 border border-dashed border-slate-200 dark:border-slate-800 rounded">
+      <div class="text-center py-16 border border-dashed border-[#D9D9D9] dark:border-slate-800 rounded">
         <p class="text-sm text-slate-400 dark:text-slate-500">Pick a quick search above or type a keyword to scout the market.</p>
         <p class="text-xs text-slate-300 dark:text-slate-700 mt-2">Searches return up to 100 live listings ranked by favorites.</p>
       </div>
