@@ -116,7 +116,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
 
 <Layout title={query ? `Etsy Scout — ${query}` : 'Etsy Scout'}>
   <!-- Header -->
-  <header class="bg-white dark:bg-slate-900 border-b border-[#D9D9D9] dark:border-slate-800 px-6 py-5 flex items-center justify-between gap-4">
+  <header class="bg-white dark:bg-slate-900 border-b border-[#D9D9D9] dark:border-slate-800 px-6 py-5 flex items-center justify-between gap-4 no-print">
     <div class="flex items-center gap-3">
       <!-- Logo -->
       <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -145,7 +145,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
   <main class="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
     <!-- Search form -->
-    <form method="GET" class="space-y-4">
+    <form method="GET" class="space-y-4 no-print">
       <div class="flex gap-3">
         <label for="q" class="sr-only">Search Etsy listings</label>
         <input
@@ -205,7 +205,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
     </form>
 
     <!-- Quick search chips -->
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-2 no-print">
       {QUICK_SEARCHES.map((term) => (
         <a
           href={`/?q=${encodeURIComponent(term)}`}
@@ -231,15 +231,42 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
     {results.listings.length > 0 && (
       <div class="space-y-8">
 
+        <!-- Print-only header (hidden on screen) -->
+        <div class="hidden print:block mb-4">
+          <h1 class="text-2xl font-bold">Etsy Scout — Market Research Report</h1>
+          <p class="text-sm text-gray-500 mt-1">
+            Search: <strong>{query}</strong>
+            {sortBy !== 'score' && <> &middot; Sort: {sortBy}</>}
+            {minPrice && <> &middot; Min: £{minPrice}</>}
+            {maxPrice && <> &middot; Max: £{maxPrice}</>}
+            &middot; {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+
+        <!-- Export PDF button -->
+        <div class="flex justify-end no-print">
+          <button
+            id="export-pdf"
+            type="button"
+            class="flex items-center gap-2 px-4 py-2 rounded border border-slate-300/70 dark:border-slate-700 text-sm text-[#595959] dark:text-slate-400 hover:border-orange-500 hover:text-orange-600 dark:hover:text-orange-400 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M3 1h7l3 3v10a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+              <path d="M10 1v3h3M8 7v5M5.5 9.5L8 12l2.5-2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Export PDF
+          </button>
+        </div>
+
         <!-- Stats cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 print-section">
           {[
             { label: 'Listings found', value: results.totalCount.toLocaleString() },
             { label: 'Avg price', value: fmt(avgPrice) },
             { label: 'Price range', value: `${fmt(minPriceFound)} – ${fmt(maxPriceFound)}` },
             { label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() },
           ].map(({ label, value }) => (
-            <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
+            <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
               <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
               <p class="text-xl font-bold text-[#222222] dark:text-white">{value}</p>
             </div>
@@ -254,7 +281,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
               <div class="flex-1 flex flex-col items-center justify-end gap-1 h-full">
                 <span class="text-xs text-slate-400 dark:text-slate-500 leading-none">{bar.count}</span>
                 <div
-                  class="w-full bg-orange-600 rounded-t transition-all"
+                  class="histogram-bar w-full bg-orange-600 rounded-t transition-all"
                   style={`height: ${Math.max(bar.pct, 2)}%`}
                 ></div>
                 <span class="text-xs text-slate-400 dark:text-slate-500 truncate w-full text-center leading-none pt-1">{bar.label}</span>
@@ -329,6 +356,10 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
     btn?.addEventListener('click', () => {
       const isDark = document.documentElement.classList.toggle('dark');
       localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+
+    document.getElementById('export-pdf')?.addEventListener('click', () => {
+      window.print();
     });
   </script>
 </Layout>

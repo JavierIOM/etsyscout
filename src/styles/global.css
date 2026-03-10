@@ -11,3 +11,78 @@
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   }
 }
+
+/* ---- Print / Export PDF styles ------------------------------------------ */
+@media print {
+  /* Force light background, black text */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 10pt;
+  }
+
+  /* Hide everything we don't want in the export */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Remove page margin chrome */
+  @page {
+    margin: 1.5cm 1.5cm 2cm;
+  }
+
+  /* Keep stat cards and table visible */
+  .print-section {
+    break-inside: avoid;
+  }
+
+  /* Override dark/slate colours for cards and borders */
+  [class*="bg-slate"], [class*="dark:bg"] {
+    background: #fff !important;
+  }
+  [class*="border-slate"], [class*="dark:border"] {
+    border-color: #ccc !important;
+  }
+  [class*="text-slate"], [class*="dark:text"] {
+    color: #444 !important;
+  }
+
+  /* Stat cards: reset orange top border to print-friendly */
+  .stat-card {
+    border: 1px solid #ccc !important;
+    border-top: 3px solid #e55a00 !important;
+    padding: 0.5cm;
+  }
+
+  /* Table: ensure full width and legible */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  th, td {
+    border-bottom: 1px solid #ddd;
+    padding: 4pt 8pt;
+  }
+  a {
+    color: #c44d00 !important;
+    text-decoration: none;
+  }
+
+  /* Price histogram bars */
+  .histogram-bar {
+    background: #e55a00 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Footer: print a minimal credit line */
+  footer {
+    display: block !important;
+    background: none !important;
+    color: #888 !important;
+    border-top: 1px solid #ddd;
+    padding-top: 0.3cm;
+    font-size: 8pt;
+  }
+}

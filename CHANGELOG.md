@@ -4,6 +4,16 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.1.0] — 2026-03-10
+
+### Added
+- Export PDF button on results page — uses browser `window.print()` with a tailored print stylesheet (no extra dependencies)
+- Print stylesheet hides search form, chips, header controls, and footer; renders stats, histogram, and listings table cleanly on white
+- Print-only report header shows search query, active filters, and export date
+- `print-color-adjust` ensures orange histogram bars render correctly in print/PDF output
+
+---
+
 ## [1.0.0] — 2026-03-10
 
 ### Added
