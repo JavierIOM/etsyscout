@@ -4,6 +4,9 @@
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  html {
+    font-size: 112.5%; /* ~18px base — comfortable reading size */
+  }
   body {
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   }

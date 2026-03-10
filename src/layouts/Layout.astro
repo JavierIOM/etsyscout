@@ -24,7 +24,20 @@ const { title = 'Etsy Scout' } = Astro.props;
       }
     </script>
   </head>
-  <body class="min-h-screen bg-white dark:bg-[#0f1117] text-slate-900 dark:text-slate-200 transition-colors duration-200">
-    <slot />
+  <body class="min-h-screen bg-white dark:bg-[#0f1117] text-slate-900 dark:text-slate-200 transition-colors duration-200 flex flex-col">
+    <div class="flex-1">
+      <slot />
+    </div>
+    <footer class="border-t border-slate-200 dark:border-slate-800 px-6 py-4 mt-8 flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
+      <span>v0.0.1</span>
+      <a
+        href="https://github.com/JavierIOM/etsyscout"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:text-slate-600 dark:hover:text-slate-400 transition-colors"
+      >
+        github.com/JavierIOM/etsyscout
+      </a>
+    </footer>
   </body>
 </html>
