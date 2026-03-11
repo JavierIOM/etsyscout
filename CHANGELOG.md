@@ -4,6 +4,19 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.7.0] — 2026-03-11
+
+### Added
+- AI-generated description bullet points inside the "Description missing key information" recommendation card — specific, product-aware examples (size, material, colour) rather than generic advice
+- AI-generated pricing copy inside price recommendations — a ready-to-use description sentence to justify under/over pricing
+- Extended AI prompt: passes missing description elements and price ratio to Claude so suggestions are context-aware
+- `descriptionBullets` and `pricingCopy` fields added to AI response schema
+
+### Fixed
+- £0.00 price on variant listings — Etsy uses `AggregateOffer` with `lowPrice` instead of `price` when a listing has size/colour variants; now falls back correctly
+
+---
+
 ## [1.6.0] — 2026-03-11
 
 ### Added
