@@ -125,15 +125,26 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
     const salesMatch = html.match(/(\d[\d,]*)\s+sales?/i);
     if (salesMatch) salesCount = parseInt(salesMatch[1].replace(',', ''));
 
-    // Price fallback: look for Etsy's embedded listing data (more reliable for variant listings)
-    // Etsy embeds price as {"amount":2000,"divisor":100,"currency_code":"GBP"} in page JSON
-    if (!price || price > 0) {
-      // Prefer the Etsy API-format price object over AggregateOffer lowPrice
-      const embeddedMatch = html.match(/"amount"\s*:\s*(\d+)\s*,\s*"divisor"\s*:\s*(\d+)\s*,\s*"currency_code"\s*:\s*"GBP"/);
-      if (embeddedMatch) {
-        const embPrice = parseInt(embeddedMatch[1]) / parseInt(embeddedMatch[2]);
-        if (embPrice > 0) price = embPrice;
-      }
+    // Price fallback 1: Etsy API-format price object in any key order
+    if (!price) {
+      // Try amount+divisor+GBP in any order within a JSON object
+      const m1 = html.match(/"amount"\s*:\s*(\d+)[^}]{0,80}"divisor"\s*:\s*(\d+)[^}]{0,80}"currency_code"\s*:\s*"GBP"/);
+      const m2 = html.match(/"currency_code"\s*:\s*"GBP"[^}]{0,80}"amount"\s*:\s*(\d+)[^}]{0,80}"divisor"\s*:\s*(\d+)/);
+      if (m1) price = parseInt(m1[1]) / parseInt(m1[2]);
+      else if (m2) price = parseInt(m2[1]) / parseInt(m2[2]);
+    }
+
+    // Price fallback 2: cheerio DOM — find first £XX.XX or £XX in the page
+    if (!price) {
+      const priceEl = $('[data-buy-box-region] [class*="price"], [class*="price-value"], .currency-value').first();
+      const priceText = priceEl.text().replace(/[^0-9.]/g, '');
+      if (priceText) price = parseFloat(priceText);
+    }
+
+    // Price fallback 3: first £XX.XX pattern in HTML
+    if (!price) {
+      const gbpMatch = html.match(/£\s*(\d+(?:\.\d{2})?)/);
+      if (gbpMatch) price = parseFloat(gbpMatch[1]);
     }
 
     return title ? { url, title, price, description, reviewCount, rating, salesCount, tags } : null;
