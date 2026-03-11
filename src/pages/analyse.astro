@@ -1,0 +1,615 @@
+---
+import Layout from '../layouts/Layout.astro';
+import * as cheerio from 'cheerio';
+
+const SCRAPE_DO_TOKEN = import.meta.env.SCRAPE_DO_TOKEN;
+const ETSY_API_KEY   = import.meta.env.ETSY_API_KEY;
+
+// ---- Types ----------------------------------------------------------------
+interface OwnListing {
+  url: string;
+  title: string;
+  price: number;
+  description: string;
+  reviewCount: number;
+  rating: number;
+  salesCount: number;
+  tags: string[];
+}
+
+interface CompListing {
+  title: string;
+  price: number;
+  num_favorers: number;
+  url: string;
+}
+
+interface Recommendation {
+  type: 'price' | 'title' | 'keywords' | 'description' | 'general';
+  severity: 'high' | 'medium' | 'info';
+  heading: string;
+  detail: string;
+  suggestion?: string;
+}
+
+// ---- Input ----------------------------------------------------------------
+const rawUrl   = Astro.url.searchParams.get('url') ?? '';
+const inputUrl = rawUrl.trim();
+
+let ownListing: OwnListing | null = null;
+let compListings: CompListing[]   = [];
+let searchQuery = '';
+let fetchError  = '';
+
+// ---- Helpers --------------------------------------------------------------
+function proxyUrl(target: string) {
+  return `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(target)}&super=true`;
+}
+
+function extractListingIdFromUrl(url: string): string | null {
+  const m = url.match(/\/listing\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+const STOPWORDS = new Set([
+  'a','an','the','and','or','for','of','in','to','with','on','at','by','from',
+  'is','it','as','your','our','my','this','that','these','those','be','are',
+  'was','were','has','have','had','not','but','so','its','uk','new','best',
+  'great','custom','personalised','personalized','handmade','unique','beautiful',
+  'perfect','special','love','free','delivery','shipping','fast','quality',
+  'design','high','hand','made','set','gift','get','you','can','all','any',
+  'replica','soft','toys','toy','teddy','teddies','doll','dolls','for',
+]);
+
+function tokenise(text: string): string[] {
+  return text.toLowerCase()
+    .replace(/[''`]/g, '')
+    .split(/[\s,.|!?:;()\[\]{}\-–—\/\\]+/)
+    .filter(t => t.length >= 3 && /^[a-z]+$/.test(t) && !STOPWORDS.has(t));
+}
+
+function median(arr: number[]): number {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+}
+
+function fmt(n: number) {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+}
+
+// ---- Scrape own listing ---------------------------------------------------
+async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
+  try {
+    const res = await fetch(proxyUrl(url), { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    let title = '', description = '', price = 0, reviewCount = 0, rating = 0, salesCount = 0;
+    const tags: string[] = [];
+
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const d = JSON.parse($(el).html() ?? '');
+        const type = d['@type'];
+        if (type === 'Product' || type === 'ProductGroup') {
+          title       = title || d.name || '';
+          description = description || d.description || '';
+          const ag    = d.aggregateRating ?? {};
+          reviewCount = reviewCount || parseInt(ag.reviewCount ?? '0');
+          rating      = rating || parseFloat(ag.ratingValue ?? '0');
+          // Keywords / tags
+          if (d.keywords) {
+            const kws = typeof d.keywords === 'string'
+              ? d.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
+              : d.keywords;
+            tags.push(...kws);
+          }
+        }
+        // Price sometimes in a separate Offer object
+        if (type === 'Offer' || (d.offers && (type === 'Product' || type === 'ProductGroup'))) {
+          const offers = d.offers ?? d;
+          const o = Array.isArray(offers) ? offers[0] : offers;
+          if (o?.price) price = price || parseFloat(String(o.price));
+        }
+      } catch {}
+    });
+
+    // Sales count from page text
+    const salesMatch = html.match(/(\d[\d,]*)\s+sales?/i);
+    if (salesMatch) salesCount = parseInt(salesMatch[1].replace(',', ''));
+
+    // Price fallback from page
+    if (!price) {
+      const priceMatch = html.match(/"price"\s*:\s*"?([\d.]+)"?/);
+      if (priceMatch) price = parseFloat(priceMatch[1]);
+    }
+
+    return title ? { url, title, price, description, reviewCount, rating, salesCount, tags } : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- Scrape competition ---------------------------------------------------
+async function scrapeCompetition(query: string): Promise<CompListing[]> {
+  if (ETSY_API_KEY) {
+    try {
+      const params = new URLSearchParams({ keywords: query, limit: '100', sort_on: 'score' });
+      const res = await fetch(`https://openapi.etsy.com/v3/application/listings/active?${params}`, {
+        headers: { 'x-api-key': ETSY_API_KEY },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return (data.results ?? []).map((l: any) => ({
+          title: l.title,
+          price: l.price.amount / l.price.divisor,
+          num_favorers: l.num_favorers,
+          url: l.url,
+        }));
+      }
+    } catch {}
+  }
+
+  if (!SCRAPE_DO_TOKEN) return [];
+
+  try {
+    const searchUrl = `https://www.etsy.com/uk/search?q=${encodeURIComponent(query)}&ref=search_bar`;
+    const res = await fetch(proxyUrl(searchUrl), { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const $    = cheerio.load(html);
+    const listings: CompListing[] = [];
+    const seen = new Set<string>();
+
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const d = JSON.parse($(el).html() ?? '');
+        if (d['@type'] === 'ItemList' && Array.isArray(d.itemListElement)) {
+          for (const item of d.itemListElement) {
+            const p = item.item ?? item;
+            const rawPrice = p.offers?.price ?? p.offers?.lowPrice;
+            const url = p.url ?? p['@id'];
+            if (!p.name || !url || rawPrice == null) continue;
+            const urlKey = String(url).split('?')[0];
+            if (seen.has(urlKey)) continue;
+            seen.add(urlKey);
+            listings.push({ title: p.name, price: parseFloat(String(rawPrice)), num_favorers: 0, url });
+          }
+        }
+      } catch {}
+    });
+
+    $('a[href*="/listing/"]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href) return;
+      const fullUrl = href.startsWith('http') ? href : `https://www.etsy.com${href}`;
+      const urlKey  = fullUrl.split('?')[0];
+      if (seen.has(urlKey)) return;
+      const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
+      if (!title || title.length < 5 || /loading|skeleton|placeholder|best seller/i.test(title)) return;
+      const card = $(el).closest('[data-listing-id]');
+      const priceText = card.find('[class*="price"]').first().text().trim();
+      const priceMatch = priceText.match(/[\d,.]+/);
+      seen.add(urlKey);
+      listings.push({
+        title,
+        price: priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0,
+        num_favorers: 0,
+        url: fullUrl,
+      });
+    });
+
+    return listings;
+  } catch {
+    return [];
+  }
+}
+
+// ---- Main fetch logic -----------------------------------------------------
+if (inputUrl && SCRAPE_DO_TOKEN) {
+  const listingId = extractListingIdFromUrl(inputUrl);
+  if (!listingId) {
+    fetchError = 'That does not look like a valid Etsy listing URL.';
+  } else {
+    // Scrape own listing first to get the title, then build search query
+    ownListing = await scrapeOwnListing(inputUrl);
+
+    if (!ownListing) {
+      fetchError = 'Could not fetch listing details — try again in a moment.';
+    } else {
+      // Derive competition search query from listing title (first 4 meaningful tokens)
+      const titleTokens = tokenise(ownListing.title);
+      searchQuery = titleTokens.slice(0, 4).join(' ');
+
+      // Fetch competition in parallel with nothing else to do now
+      compListings = await scrapeCompetition(searchQuery);
+    }
+  }
+} else if (inputUrl && !SCRAPE_DO_TOKEN) {
+  fetchError = 'SCRAPE_DO_TOKEN is not configured.';
+}
+
+// ---- Analysis -------------------------------------------------------------
+const compPrices  = compListings.map(l => l.price).filter(p => p > 0);
+const sweetSpot   = median(compPrices);
+const avgComp     = compPrices.length ? compPrices.reduce((a, b) => a + b, 0) / compPrices.length : 0;
+const minComp     = compPrices.length ? Math.min(...compPrices) : 0;
+const maxComp     = compPrices.length ? Math.max(...compPrices) : 0;
+const totalComp   = compListings.length;
+
+// Keyword gap: which words appear frequently in competitor titles but not in own title
+const ownTitleTokens = new Set(ownListing ? tokenise(ownListing.title) : []);
+
+const compWordFreq = new Map<string, number>();
+for (const cl of compListings) {
+  for (const token of tokenise(cl.title)) {
+    compWordFreq.set(token, (compWordFreq.get(token) ?? 0) + 1);
+  }
+}
+
+const keywordGaps = [...compWordFreq.entries()]
+  .filter(([word]) => !ownTitleTokens.has(word))
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 10)
+  .map(([word, count]) => ({ word, count }));
+
+const maxGapCount = keywordGaps.length ? keywordGaps[0].count : 1;
+
+// ---- Recommendation engine -----------------------------------------------
+const recommendations: Recommendation[] = [];
+
+if (ownListing) {
+  const price = ownListing.price;
+
+  // Price
+  if (sweetSpot > 0) {
+    const ratio = price / sweetSpot;
+    if (ratio > 1.3) {
+      recommendations.push({
+        type: 'price', severity: 'high',
+        heading: 'Priced above the market sweet spot',
+        detail: `Your price of ${fmt(price)} is ${Math.round((ratio - 1) * 100)}% above the market median of ${fmt(sweetSpot)}. Buyers comparison-shopping will see cheaper options first.`,
+        suggestion: `Consider pricing between ${fmt(sweetSpot * 0.95)} and ${fmt(sweetSpot * 1.1)}, or add clear value justification (size, quality, customisation) to support the premium.`,
+      });
+    } else if (ratio < 0.7) {
+      recommendations.push({
+        type: 'price', severity: 'medium',
+        heading: 'Priced below the market — potential revenue left on the table',
+        detail: `At ${fmt(price)} you are ${Math.round((1 - ratio) * 100)}% below the median of ${fmt(sweetSpot)}. Low pricing can signal lower quality to buyers on Etsy.`,
+        suggestion: `Test increasing to ${fmt(Math.round(sweetSpot * 0.9 * 100) / 100)} — still below average but removes the "too cheap" perception.`,
+      });
+    } else {
+      recommendations.push({
+        type: 'price', severity: 'info',
+        heading: 'Price is well positioned',
+        detail: `${fmt(price)} sits close to the market median of ${fmt(sweetSpot)} — competitive without being the cheapest.`,
+      });
+    }
+  }
+
+  // Title length
+  if (ownListing.title.length < 80) {
+    recommendations.push({
+      type: 'title', severity: 'medium',
+      heading: 'Title is shorter than optimal',
+      detail: `Your title is ${ownListing.title.length} characters. Etsy allows 140 and the algorithm rewards titles that use relevant keywords across the full length.`,
+      suggestion: 'Add 2–3 specific use-case or buyer-intent phrases at the end, e.g. "Hearing Awareness Gift, Deaf Community, Choose Your Colour".',
+    });
+  }
+
+  // Trademark/brand names in title
+  const trademarkTerms = ['disney', 'mickey', 'minnie', 'marvel', 'lego', 'peppa', 'pokemon', 'barbie'];
+  const titleLower = ownListing.title.toLowerCase();
+  const foundTrademark = trademarkTerms.filter(t => titleLower.includes(t));
+  if (foundTrademark.length > 0) {
+    recommendations.push({
+      type: 'title', severity: 'high',
+      heading: `Trademarked brand names in title: ${foundTrademark.join(', ')}`,
+      detail: 'Using brand names like Disney, Mickey Mouse, or similar in your Etsy listing title or tags violates Etsy policy and trademark law. Etsy will remove the listing and repeated violations can suspend your shop.',
+      suggestion: 'Replace with descriptive terms: "mouse character", "round-ear plush", "classic cartoon soft toy". Buyers still find it — without the legal risk.',
+    });
+  }
+
+  // Reviews
+  if (ownListing.reviewCount === 0) {
+    recommendations.push({
+      type: 'general', severity: 'medium',
+      heading: 'No reviews yet',
+      detail: 'Listings with zero reviews convert significantly worse. Buyers trust social proof.',
+      suggestion: 'Message recent buyers directly asking for a review. Consider pricing the first few sales slightly lower to generate initial reviews quickly.',
+    });
+  } else if (ownListing.reviewCount < 10) {
+    recommendations.push({
+      type: 'general', severity: 'info',
+      heading: `${ownListing.reviewCount} reviews — keep building`,
+      detail: 'Listings start converting much better around 10–20 reviews. You are on your way.',
+    });
+  }
+
+  // Description completeness
+  const desc = ownListing.description.toLowerCase();
+  const missingDescElements: string[] = [];
+  if (!/\d+\s*(mm|cm|inch|"|\')/.test(desc) && !/size|dimension|measur/.test(desc)) missingDescElements.push('dimensions / size');
+  if (!/colou?r/.test(desc) || (desc.includes('colour') && !desc.match(/red|blue|green|black|white|yellow|pink|purple|grey|gray|orange|natural|wood/))) missingDescElements.push('specific colour options listed');
+  if (!/material|pla|resin|wood|acrylic|mdf/.test(desc)) missingDescElements.push('material details');
+  if (missingDescElements.length > 0) {
+    recommendations.push({
+      type: 'description', severity: 'medium',
+      heading: 'Description missing key information',
+      detail: `Buyers often abandon listings that do not answer basic questions. Missing from your description: ${missingDescElements.join(', ')}.`,
+      suggestion: 'Add a short bullet-point section at the top of the description covering size, materials, and colour options. Buyers should not need to message you to get basic facts.',
+    });
+  }
+
+  // Cross-sell
+  if (/also do|also make|other|smaller|larger|range/.test(desc)) {
+    recommendations.push({
+      type: 'general', severity: 'info',
+      heading: 'Cross-sell mentioned but not linked',
+      detail: 'You mention other products in your description but do not link to them. Buyers will not search for them.',
+      suggestion: 'Add direct Etsy listing URLs to related products in your description, or use the "Shop sections" and "Related listings" features.',
+    });
+  }
+
+  // Keyword gaps
+  if (keywordGaps.length > 0) {
+    const topGaps = keywordGaps.slice(0, 5).map(k => k.word).join(', ');
+    recommendations.push({
+      type: 'keywords', severity: 'medium',
+      heading: 'Competitors use keywords your title is missing',
+      detail: `The words "${topGaps}" appear frequently in competing listings but not in your title. These represent search terms you are invisible for.`,
+      suggestion: 'Work the most relevant ones into your title and all 13 Etsy tags. Each tag can be a phrase, not just a word — use the full tag length.',
+    });
+  }
+}
+
+// ---- Severity sort: high first -------------------------------------------
+const severityOrder = { high: 0, medium: 1, info: 2 };
+recommendations.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+const severityStyles = {
+  high:   { bar: 'bg-red-500',   badge: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',   label: 'Action needed' },
+  medium: { bar: 'bg-amber-500', badge: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300', label: 'Recommended' },
+  info:   { bar: 'bg-sky-500',   badge: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300',   label: 'Info' },
+};
+
+// Histogram for competition prices
+function buildHistogram(prices: number[], buckets = 8) {
+  if (!prices.length) return [];
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const range = max - min || 1, step = range / buckets;
+  const bars: { label: string; count: number; pct: number; hasOwn: boolean }[] = Array.from({ length: buckets }, (_, i) => ({
+    label: `£${(min + i * step).toFixed(0)}`, count: 0, pct: 0, hasOwn: false,
+  }));
+  for (const p of prices) {
+    const idx = Math.min(Math.floor((p - min) / step), buckets - 1);
+    bars[idx].count++;
+  }
+  if (ownListing?.price) {
+    const idx = Math.min(Math.floor((ownListing.price - min) / step), buckets - 1);
+    if (idx >= 0 && idx < buckets) bars[idx].hasOwn = true;
+  }
+  const maxCount = Math.max(...bars.map(b => b.count), 1);
+  bars.forEach(b => (b.pct = (b.count / maxCount) * 100));
+  return bars;
+}
+
+const histogram = buildHistogram(compPrices);
+---
+
+<Layout title="Listing Analyser — Etsy Scout">
+  <!-- Header -->
+  <header class="bg-white dark:bg-slate-900 border-b border-[#D9D9D9] dark:border-slate-800 px-6 py-5 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="36" height="36" rx="8" fill="#F56400"/>
+        <circle cx="15.5" cy="15.5" r="7" stroke="white" stroke-width="2.5" fill="none"/>
+        <line x1="20.5" y1="20.5" x2="27" y2="27" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="12.5" y1="15.5" x2="18.5" y2="15.5" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <line x1="15.5" y1="12.5" x2="15.5" y2="18.5" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-[#222222] dark:text-white">Etsy Scout</h1>
+        <p class="text-xs text-[#595959] dark:text-slate-400">Market research for 3D print &amp; laser cut sellers</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <nav class="flex items-center gap-1 text-xs">
+        <a href="/" class="px-3 py-1.5 rounded font-medium text-[#595959] dark:text-slate-400 hover:text-[#222222] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Market Search</a>
+        <a href="/analyse" class="px-3 py-1.5 rounded font-medium bg-orange-600 text-white">Listing Analyser</a>
+      </nav>
+      <button
+        id="theme-toggle"
+        aria-label="Toggle light/dark theme"
+        class="p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-500 transition-colors text-xs font-medium"
+      >
+        <span class="dark:hidden">Dark</span>
+        <span class="hidden dark:inline">Light</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- URL input form -->
+    <form method="GET" class="space-y-3">
+      <label for="url" class="block text-sm font-medium text-[#222222] dark:text-white">
+        Paste your Etsy listing URL
+      </label>
+      <div class="flex gap-3">
+        <input
+          type="url"
+          id="url"
+          name="url"
+          value={inputUrl}
+          placeholder="https://www.etsy.com/uk/listing/..."
+          class="flex-1 bg-white dark:bg-slate-900 border border-slate-300/70 dark:border-slate-700 rounded px-4 py-2.5 text-[#222222] dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm"
+          autofocus
+        />
+        <button
+          type="submit"
+          class="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 py-2.5 rounded text-sm transition-colors whitespace-nowrap"
+        >
+          Analyse Listing
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 dark:text-slate-500">Works with any active Etsy listing. Competition is pulled automatically from your listing's key terms.</p>
+    </form>
+
+    <!-- Error -->
+    {fetchError && (
+      <div class="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-4 text-red-700 dark:text-red-300 text-sm">
+        {fetchError}
+      </div>
+    )}
+
+    <!-- Results -->
+    {ownListing && (
+      <div class="space-y-8">
+
+        <!-- Your listing summary -->
+        <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6">
+          <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Your Listing</p>
+          <h2 class="text-base font-semibold text-[#222222] dark:text-white leading-snug mb-4">{ownListing.title}</h2>
+          <div class="flex flex-wrap gap-6 text-sm">
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">Price</p>
+              <p class="font-bold text-[#222222] dark:text-white">{ownListing.price > 0 ? fmt(ownListing.price) : '—'}</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">Reviews</p>
+              <p class="font-bold text-[#222222] dark:text-white">{ownListing.reviewCount} {ownListing.rating > 0 ? `(${ownListing.rating.toFixed(1)}★)` : ''}</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">Sales</p>
+              <p class="font-bold text-[#222222] dark:text-white">{ownListing.salesCount > 0 ? ownListing.salesCount.toLocaleString() : '—'}</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">Competition search</p>
+              <p class="font-bold text-[#222222] dark:text-white">"{searchQuery}"</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recommendations -->
+        {recommendations.length > 0 && (
+          <div class="space-y-3">
+            <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Recommendations</h2>
+            {recommendations.map(rec => (
+              <div class={`bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded overflow-hidden`}>
+                <div class={`h-1 ${severityStyles[rec.severity].bar}`}></div>
+                <div class="p-5">
+                  <div class="flex items-start gap-3">
+                    <span class={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${severityStyles[rec.severity].badge}`}>
+                      {severityStyles[rec.severity].label}
+                    </span>
+                    <div class="space-y-1.5 min-w-0">
+                      <p class="text-sm font-semibold text-[#222222] dark:text-white">{rec.heading}</p>
+                      <p class="text-sm text-[#595959] dark:text-slate-400 leading-relaxed">{rec.detail}</p>
+                      {rec.suggestion && (
+                        <p class="text-sm text-[#222222] dark:text-slate-200 leading-relaxed border-l-2 border-orange-500 pl-3 mt-2">
+                          {rec.suggestion}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <!-- Keyword gap panel -->
+        {keywordGaps.length > 0 && (
+          <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6">
+            <div class="flex items-baseline justify-between mb-5">
+              <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Keyword Gap</h2>
+              <span class="text-xs text-slate-400 dark:text-slate-500">competitor keywords missing from your title</span>
+            </div>
+            <ol class="space-y-2">
+              {keywordGaps.map(({ word, count }) => (
+                <li class="flex items-center gap-3 text-sm">
+                  <span class="text-[#222222] dark:text-slate-200 font-medium w-32 shrink-0 truncate capitalize">{word}</span>
+                  <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-full bg-orange-600 rounded-full" style={`width: ${Math.round((count / maxGapCount) * 100)}%`}></div>
+                  </div>
+                  <span class="text-xs text-slate-400 dark:text-slate-500 tabular-nums w-6 text-right shrink-0">{count}</span>
+                </li>
+              ))}
+            </ol>
+            <p class="mt-4 text-xs text-slate-400 dark:text-slate-600">Based on {totalComp} competing listings for "{searchQuery}".</p>
+          </div>
+        )}
+
+        <!-- Market stats + price histogram -->
+        {compListings.length > 0 && (
+          <div class="space-y-4">
+            <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Competition — "{searchQuery}"</h2>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Competing listings', value: totalComp.toLocaleString() },
+                { label: 'Price sweet spot',   value: sweetSpot > 0 ? fmt(sweetSpot) : '—' },
+                { label: 'Avg comp price',     value: avgComp > 0 ? fmt(avgComp) : '—' },
+                { label: 'Price range',        value: minComp > 0 ? `${fmt(minComp)} – ${fmt(maxComp)}` : '—' },
+              ].map(({ label, value }) => (
+                <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-slate-300 dark:border-t-slate-600 rounded p-4">
+                  <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
+                  <p class="text-xl font-bold text-[#222222] dark:text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <!-- Price distribution with your price marked -->
+            <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6">
+              <div class="flex items-baseline justify-between mb-6">
+                <h3 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Competition Price Distribution</h3>
+                {ownListing.price > 0 && (
+                  <span class="text-xs text-slate-400 dark:text-slate-500">
+                    Orange bar = where your price sits &nbsp;
+                    <span class="inline-block w-3 h-3 rounded-sm bg-orange-500 align-middle"></span>
+                  </span>
+                )}
+              </div>
+              <div class="flex items-end gap-2" style="height: 10rem;">
+                {histogram.map((bar) => (
+                  <div class="flex-1 flex flex-col items-center justify-end gap-1 h-full">
+                    <span class="text-xs text-slate-400 dark:text-slate-500 leading-none">{bar.count}</span>
+                    <div
+                      class={`w-full rounded-t transition-all ${bar.hasOwn ? 'bg-orange-500' : 'bg-[#243B55] dark:bg-slate-600'}`}
+                      style={`height: ${Math.max(bar.pct, 2)}%`}
+                    ></div>
+                    <span class="text-xs text-slate-400 dark:text-slate-500 truncate w-full text-center leading-none pt-1">{bar.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    )}
+
+    <!-- Empty state -->
+    {!inputUrl && (
+      <div class="text-center py-16 border border-dashed border-[#D9D9D9] dark:border-slate-800 rounded">
+        <p class="text-sm text-[#595959] dark:text-slate-500">Paste any of your live Etsy listing URLs above to get started.</p>
+        <p class="text-xs text-[#595959] dark:text-slate-700 mt-2">The tool will fetch your listing details, search for competing products, and give you specific improvement advice.</p>
+      </div>
+    )}
+
+  </main>
+
+  <script>
+    const btn = document.getElementById('theme-toggle');
+    btn?.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+  </script>
+</Layout>

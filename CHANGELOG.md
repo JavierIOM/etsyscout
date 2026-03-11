@@ -4,6 +4,22 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.5.0] — 2026-03-11
+
+### Added
+- New `/analyse` page — Listing Analyser tool
+  - Paste any Etsy listing URL to get a full competitive breakdown
+  - Scrapes your listing details (title, price, reviews, sales, description) via scrape.do
+  - Auto-derives competition search query from your title keywords
+  - Fetches competing listings in parallel for speed
+  - Recommendations engine: price positioning, title length, trademark risk, description gaps, review status, cross-sell opportunities
+  - Keyword Gap panel: words appearing in competitor titles that are missing from yours
+  - Competition price distribution histogram with your price highlighted
+  - Market stats: competing listings, sweet spot, avg/range
+- Navigation links (Market Search / Listing Analyser) added to both pages
+
+---
+
 ## [1.4.0] — 2026-03-11
 
 ### Added

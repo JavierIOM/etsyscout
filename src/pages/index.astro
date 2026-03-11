@@ -329,15 +329,20 @@ const compStyles: Record<CompLevel, { text: string; badge: string }> = {
         <p class="text-xs text-[#595959] dark:text-slate-400">Market research for 3D print &amp; laser cut sellers</p>
       </div>
     </div>
-    <!-- Theme toggle -->
-    <button
-      id="theme-toggle"
-      aria-label="Toggle light/dark theme"
-      class="p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-500 transition-colors text-xs font-medium"
-    >
-      <span class="dark:hidden">Dark</span>
-      <span class="hidden dark:inline">Light</span>
-    </button>
+    <div class="flex items-center gap-3">
+      <nav class="flex items-center gap-1 text-xs">
+        <a href="/" class="px-3 py-1.5 rounded font-medium bg-orange-600 text-white">Market Search</a>
+        <a href="/analyse" class="px-3 py-1.5 rounded font-medium text-[#595959] dark:text-slate-400 hover:text-[#222222] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Listing Analyser</a>
+      </nav>
+      <button
+        id="theme-toggle"
+        aria-label="Toggle light/dark theme"
+        class="p-2 rounded border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-500 transition-colors text-xs font-medium"
+      >
+        <span class="dark:hidden">Dark</span>
+        <span class="hidden dark:inline">Light</span>
+      </button>
+    </div>
   </header>
 
   <main class="max-w-6xl mx-auto px-6 py-8 space-y-8">
