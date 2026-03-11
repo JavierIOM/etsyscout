@@ -115,7 +115,8 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
           const offers = d.offers ?? d;
           const offerList = Array.isArray(offers) ? offers : [offers];
           const gbpOffer = offerList.find((o: any) => o?.priceCurrency === 'GBP') ?? offerList[0];
-          if (gbpOffer?.price && !price) price = parseFloat(String(gbpOffer.price));
+          const rawPrice = gbpOffer?.price ?? gbpOffer?.lowPrice ?? gbpOffer?.highPrice;
+          if (rawPrice && !price) price = parseFloat(String(rawPrice));
         }
       } catch {}
     });
