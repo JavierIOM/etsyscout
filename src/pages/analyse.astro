@@ -272,6 +272,7 @@ interface AISuggestions {
 }
 
 let aiSuggestions: AISuggestions | null = null;
+let aiError = '';
 
 if (ownListing && ANTHROPIC_API_KEY) {
   try {
@@ -320,8 +321,8 @@ Respond with JSON only, no other text:
         aiSuggestions = parsed as AISuggestions;
       }
     }
-  } catch {
-    // AI suggestions are best-effort — fail silently
+  } catch (e: any) {
+    aiError = e?.message ?? String(e);
   }
 }
 
@@ -595,6 +596,13 @@ const histogram = buildHistogram(compPrices);
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        <!-- AI error (debug) -->
+        {aiError && (
+          <div class="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-4 text-red-700 dark:text-red-300 text-sm">
+            <strong>AI suggestions failed:</strong> {aiError}
           </div>
         )}
 
