@@ -4,6 +4,15 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.8.0] — 2026-03-11
+
+### Fixed
+- Price extraction for `ProductGroup` variant listings — Etsy uses `hasVariant[]` instead of `offers` on the top-level JSON-LD block; now iterates variants and takes the maximum GBP price
+- Removed greedy `£XX.XX` regex fallback that was matching unrelated prices from related listings on the page
+- Removed broken Etsy embedded JSON regex fallbacks that returned wrong prices
+
+---
+
 ## [1.7.0] — 2026-03-11
 
 ### Added
