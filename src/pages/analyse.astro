@@ -108,11 +108,12 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
             tags.push(...kws);
           }
         }
-        // Price sometimes in a separate Offer object
+        // Price — prefer GBP offer, ignore USD/EUR variants
         if (type === 'Offer' || (d.offers && (type === 'Product' || type === 'ProductGroup'))) {
           const offers = d.offers ?? d;
-          const o = Array.isArray(offers) ? offers[0] : offers;
-          if (o?.price) price = price || parseFloat(String(o.price));
+          const offerList = Array.isArray(offers) ? offers : [offers];
+          const gbpOffer = offerList.find((o: any) => o?.priceCurrency === 'GBP') ?? offerList[0];
+          if (gbpOffer?.price && !price) price = parseFloat(String(gbpOffer.price));
         }
       } catch {}
     });
