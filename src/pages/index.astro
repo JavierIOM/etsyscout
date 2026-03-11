@@ -1,7 +1,9 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import * as cheerio from 'cheerio';
 
 const ETSY_API_KEY = import.meta.env.ETSY_API_KEY;
+const SCRAPE_DO_TOKEN = import.meta.env.SCRAPE_DO_TOKEN;
 
 interface EtsyListing {
   listing_id: number;
@@ -17,6 +19,7 @@ interface SearchResult {
   listings: EtsyListing[];
   totalCount: number;
   error?: string;
+  source?: 'api' | 'scrape';
 }
 
 const query = Astro.url.searchParams.get('q') ?? '';
@@ -66,8 +69,87 @@ if (query && ETSY_API_KEY) {
   } catch (e) {
     results.error = e instanceof Error ? e.message : 'Unknown error';
   }
-} else if (query && !ETSY_API_KEY) {
-  results.error = 'ETSY_API_KEY environment variable is not set.';
+} else if (query && SCRAPE_DO_TOKEN) {
+  // scrape.do fallback — used while Etsy API key is pending
+  try {
+    const searchUrl = `https://www.etsy.com/uk/search?q=${encodeURIComponent(query)}&ref=search_bar`;
+    const proxyUrl = `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(searchUrl)}&super=true`;
+
+    const res = await fetch(proxyUrl);
+
+    if (!res.ok) {
+      results.error = `Scrape error ${res.status} — try again shortly.`;
+    } else {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      const listings: EtsyListing[] = [];
+
+      // Try JSON-LD structured data first (most reliable)
+      $('script[type="application/ld+json"]').each((_, el) => {
+        if (listings.length > 0) return;
+        try {
+          const data = JSON.parse($(el).html() ?? '');
+          if (data['@type'] === 'ItemList' && Array.isArray(data.itemListElement)) {
+            for (const item of data.itemListElement) {
+              const product = item.item ?? item;
+              const rawPrice = product.offers?.price ?? product.offers?.lowPrice;
+              const url = product.url ?? product['@id'];
+              const title = product.name;
+              if (title && url && rawPrice != null) {
+                const priceNum = parseFloat(String(rawPrice));
+                if (!isNaN(priceNum)) {
+                  listings.push({
+                    listing_id: listings.length,
+                    title,
+                    price: { amount: Math.round(priceNum * 100), divisor: 100, currency_code: 'GBP' },
+                    num_favorers: 0,
+                    views: 0,
+                    url,
+                    quantity: 1,
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
+      });
+
+      // DOM fallback — grab listing cards directly
+      if (listings.length === 0) {
+        $('a[href*="/listing/"]').each((_, el) => {
+          const href = $(el).attr('href');
+          if (!href || listings.some((l) => l.url === href)) return;
+          const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
+          const priceText = $(el).closest('[data-listing-id]').find('[class*="price"]').first().text().trim()
+            || $(el).find('[class*="price"]').first().text().trim();
+          const priceMatch = priceText.match(/[\d,.]+/);
+          if (!title || title.length < 5) return;
+          const priceNum = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;
+          listings.push({
+            listing_id: listings.length,
+            title,
+            price: { amount: Math.round(priceNum * 100), divisor: 100, currency_code: 'GBP' },
+            num_favorers: 0,
+            views: 0,
+            url: href.startsWith('http') ? href : `https://www.etsy.com${href}`,
+            quantity: 1,
+          });
+        });
+      }
+
+      if (listings.length > 0) {
+        results.listings = listings;
+        results.totalCount = listings.length;
+        results.source = 'scrape';
+      } else {
+        results.error = 'Could not extract listings from Etsy — page structure may have changed.';
+      }
+    }
+  } catch (e) {
+    results.error = e instanceof Error ? e.message : 'Scrape error';
+  }
+} else if (query) {
+  results.error = 'No ETSY_API_KEY or SCRAPE_DO_TOKEN environment variable is set.';
 }
 
 // ---- Stats ----------------------------------------------------------------
@@ -258,13 +340,20 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
           </button>
         </div>
 
+        <!-- Scrape mode notice -->
+        {results.source === 'scrape' && (
+          <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400 no-print">
+            Using web scrape fallback — favorites and views are unavailable. Awaiting Etsy API key for full data.
+          </div>
+        )}
+
         <!-- Stats cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 print-section">
           {[
             { label: 'Listings found', value: results.totalCount.toLocaleString() },
             { label: 'Avg price', value: fmt(avgPrice) },
             { label: 'Price range', value: `${fmt(minPriceFound)} – ${fmt(maxPriceFound)}` },
-            { label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() },
+            ...(results.source !== 'scrape' ? [{ label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() }] : []),
           ].map(({ label, value }) => (
             <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
               <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
@@ -294,7 +383,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
         <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded overflow-hidden">
           <div class="px-6 py-4 border-b border-[#D9D9D9] dark:border-slate-800">
             <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">
-              Top {topListings.length} Listings by Favorites
+              Top {topListings.length} Listings{results.source !== 'scrape' ? ' by Favorites' : ''}
             </h2>
           </div>
           <div class="overflow-x-auto">
@@ -303,8 +392,12 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
                 <tr class="text-left">
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider">Title</th>
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Price</th>
-                  <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Favorites</th>
-                  <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Views</th>
+                  {results.source !== 'scrape' && (
+                    <>
+                      <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Favorites</th>
+                      <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Views</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#D9D9D9] dark:divide-slate-800">
@@ -325,12 +418,16 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
                     <td class="px-6 py-3 text-right font-mono font-semibold text-green-600 dark:text-green-400">
                       {fmt(getPrice(listing))}
                     </td>
-                    <td class="px-6 py-3 text-right text-[#595959] dark:text-slate-300">
-                      {listing.num_favorers.toLocaleString()}
-                    </td>
-                    <td class="px-6 py-3 text-right text-slate-400 dark:text-slate-500">
-                      {listing.views.toLocaleString()}
-                    </td>
+                    {results.source !== 'scrape' && (
+                      <>
+                        <td class="px-6 py-3 text-right text-[#595959] dark:text-slate-300">
+                          {listing.num_favorers.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-3 text-right text-slate-400 dark:text-slate-500">
+                          {listing.views.toLocaleString()}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

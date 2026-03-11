@@ -4,6 +4,21 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.2.0] — 2026-03-11
+
+### Added
+- scrape.do fallback for when Etsy API key is pending or unavailable
+  - Uses `https://www.etsy.com/uk/search?q=...` with `super=true` (no headless render)
+  - Parses JSON-LD structured data first; falls back to DOM extraction via cheerio
+  - Amber notice banner shown when scrape mode is active
+  - Favorites/views columns hidden and stats card suppressed in scrape mode (data not available)
+- `cheerio` dependency for HTML parsing in scrape fallback
+
+### Changed
+- `SCRAPE_DO_TOKEN` env var now activates fallback automatically if `ETSY_API_KEY` is absent
+
+---
+
 ## [1.1.0] — 2026-03-10
 
 ### Added
