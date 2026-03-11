@@ -74,10 +74,10 @@ if (query && ETSY_API_KEY) {
   // scrape.do fallback — used while Etsy API key is pending
   try {
     const searchUrl = `https://www.etsy.com/uk/search?q=${encodeURIComponent(query)}&ref=search_bar`;
-    // render=true loads the full JS-rendered page for more results; super=true uses residential proxies
-    const proxyUrl = `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(searchUrl)}&render=true&super=true`;
+    // super=true uses residential proxies — no render=true (causes Netlify function timeout)
+    const proxyUrl = `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(searchUrl)}&super=true`;
 
-    const res = await fetch(proxyUrl);
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
 
     if (!res.ok) {
       results.error = `Scrape error ${res.status} — try again shortly.`;
@@ -203,12 +203,111 @@ function buildHistogram(prices: number[], buckets = 8) {
 
 const histogram = buildHistogram(prices);
 
-// ---- Top listings by favorites --------------------------------------------
+// ---- Top listings (favorites when API, price when scraping) ---------------
 const topListings = [...results.listings]
-  .sort((a, b) => b.num_favorers - a.num_favorers)
+  .sort((a, b) => results.source === 'scrape'
+    ? getPrice(a) - getPrice(b)
+    : b.num_favorers - a.num_favorers)
   .slice(0, 25);
 
 const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+
+// ---- Median helper --------------------------------------------------------
+function median(arr: number[]): number {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+// ---- Keyword frequency ----------------------------------------------------
+const STOPWORDS = new Set([
+  'a','an','the','and','or','for','of','in','to','with','on','at','by','from',
+  'is','it','as','your','our','my','this','that','these','those','be','are',
+  'was','were','has','have','had','not','but','so','its','uk','new','best',
+  'great','custom','personalised','personalized','handmade','unique','beautiful',
+  'perfect','special','love','free','delivery','shipping','fast','quality',
+  'design','high','hand','made','set','gift','get','you','can','all','any',
+]);
+
+function extractKeywords(listings: EtsyListing[], searchQuery: string, topN = 15) {
+  const queryTokens = new Set(searchQuery.toLowerCase().split(/\s+/).filter(Boolean));
+  const freq = new Map<string, number>();
+  for (const listing of listings) {
+    const tokens = listing.title
+      .toLowerCase()
+      .replace(/[''`]/g, '')
+      .split(/[\s,.|!?:;()\[\]{}\-–—\/\\]+/)
+      .filter(t => t.length >= 3 && /^[a-z]+$/.test(t));
+    for (const token of tokens) {
+      if (STOPWORDS.has(token) || queryTokens.has(token)) continue;
+      freq.set(token, (freq.get(token) ?? 0) + 1);
+    }
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([word, count]) => ({ word, count }));
+}
+
+const keywords = results.listings.length > 0 ? extractKeywords(results.listings, query) : [];
+const maxKwCount = keywords.length ? keywords[0].count : 1;
+
+// ---- Price sweet spot -----------------------------------------------------
+function getPriceSweetSpot(listings: EtsyListing[], source: 'api' | 'scrape' | undefined) {
+  if (!listings.length) return { price: 0, note: '' };
+  if (source !== 'scrape') {
+    const sorted = [...listings].sort((a, b) => b.num_favorers - a.num_favorers);
+    const top = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 3)));
+    return { price: median(top.map(getPrice)), note: 'median price of top-favorited listings' };
+  }
+  return { price: median(listings.map(getPrice)), note: 'median across all listings found' };
+}
+
+const sweetSpot = getPriceSweetSpot(results.listings, results.source);
+
+// ---- Competition level ----------------------------------------------------
+type CompLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+function getCompetition(total: number): { level: CompLevel; description: string } {
+  if (total < 500)  return { level: 'LOW',    description: 'Few sellers here — good window to establish early.' };
+  if (total < 2000) return { level: 'MEDIUM', description: 'Active market — strong photos and SEO will differentiate.' };
+  return              { level: 'HIGH',   description: 'Crowded search results — a clear niche or standout angle is essential.' };
+}
+
+const competition = getCompetition(results.totalCount);
+
+// ---- Market verdict -------------------------------------------------------
+type VerdictType = 'OPPORTUNITY' | 'EMERGING' | 'NICHE' | 'SATURATED';
+
+function getVerdict(total: number, avgFav: number, source: 'api' | 'scrape' | undefined): { type: VerdictType; label: string; detail: string } {
+  if (source !== 'scrape') {
+    const highDemand = avgFav >= 50;
+    const highSupply = total >= 2000;
+    if (highDemand && !highSupply) return { type: 'OPPORTUNITY', label: 'Strong Opportunity', detail: 'High buyer interest with manageable competition — good time to enter.' };
+    if (highDemand && highSupply)  return { type: 'SATURATED',   label: 'Saturated',          detail: 'Popular but extremely crowded — strong differentiation is essential.' };
+    if (!highDemand && total < 500) return { type: 'NICHE',      label: 'Niche Market',       detail: 'Small, specialised audience — lower risk, steady demand from enthusiasts.' };
+    return { type: 'EMERGING', label: 'Emerging', detail: 'Moderate supply and interest — worth testing before committing heavily.' };
+  }
+  if (total < 300)  return { type: 'NICHE',       label: 'Niche Market',    detail: 'Few competing listings — limited but potentially loyal audience.' };
+  if (total < 1000) return { type: 'EMERGING',    label: 'Emerging',        detail: 'Moderate listing count — active without being overcrowded.' };
+  if (total < 3000) return { type: 'OPPORTUNITY', label: 'Active Market',   detail: 'Healthy volume — validated demand, competitive but accessible.' };
+  return              { type: 'SATURATED',   label: 'Saturated',       detail: 'Very high listing count — strong differentiation needed to stand out.' };
+}
+
+const verdict = getVerdict(results.totalCount, avgFavorites, results.source);
+
+const verdictStyles: Record<VerdictType, { text: string; border: string }> = {
+  OPPORTUNITY: { text: 'text-green-600 dark:text-green-400',  border: 'border-t-green-500' },
+  EMERGING:    { text: 'text-amber-500 dark:text-amber-400',  border: 'border-t-amber-500' },
+  NICHE:       { text: 'text-sky-600   dark:text-sky-400',    border: 'border-t-sky-500'   },
+  SATURATED:   { text: 'text-red-600   dark:text-red-400',    border: 'border-t-red-500'   },
+};
+const compStyles: Record<CompLevel, { text: string; badge: string }> = {
+  LOW:    { text: 'text-green-600 dark:text-green-400', badge: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' },
+  MEDIUM: { text: 'text-amber-500 dark:text-amber-400', badge: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' },
+  HIGH:   { text: 'text-red-600   dark:text-red-400',   badge: 'bg-red-100   dark:bg-red-900/30   text-red-700   dark:text-red-300'   },
+};
 ---
 
 <Layout title={query ? `Etsy Scout — ${query}` : 'Etsy Scout'}>
@@ -358,11 +457,66 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
         <!-- Scrape mode notice -->
         {results.source === 'scrape' && (
           <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400 no-print">
-            Using web scrape fallback — favorites and views are unavailable. Awaiting Etsy API key for full data.
+            Using web scrape fallback — favorites and views unavailable. Verdict and sweet spot based on listing count and prices only.
           </div>
         )}
 
-        <!-- Stats cards -->
+        <!-- Market Intelligence row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 print-section">
+
+          <!-- Market Verdict -->
+          <div class={`stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 ${verdictStyles[verdict.type].border} rounded p-5 flex flex-col gap-2`}>
+            <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Market Verdict</p>
+            <p class={`text-2xl font-bold tracking-tight ${verdictStyles[verdict.type].text}`}>{verdict.label}</p>
+            <p class="text-xs text-[#595959] dark:text-slate-400 leading-relaxed">{verdict.detail}</p>
+          </div>
+
+          <!-- Competition -->
+          <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-[#243B55] rounded p-5 flex flex-col gap-2">
+            <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Competition</p>
+            <div class="flex items-center gap-3">
+              <p class={`text-2xl font-bold tracking-tight ${compStyles[competition.level].text}`}>{competition.level}</p>
+              <span class={`text-xs font-semibold px-2 py-0.5 rounded-full ${compStyles[competition.level].badge}`}>
+                {results.totalCount.toLocaleString()} listings
+              </span>
+            </div>
+            <p class="text-xs text-[#595959] dark:text-slate-400 leading-relaxed">{competition.description}</p>
+          </div>
+
+          <!-- Price Sweet Spot -->
+          <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-orange-600 rounded p-5 flex flex-col gap-2">
+            <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Price Sweet Spot</p>
+            <p class="text-2xl font-bold tracking-tight text-orange-600 dark:text-orange-400">
+              {sweetSpot.price > 0 ? fmt(sweetSpot.price) : '—'}
+            </p>
+            <p class="text-xs text-[#595959] dark:text-slate-400 leading-relaxed">{sweetSpot.note}</p>
+          </div>
+
+        </div>
+
+        <!-- Keyword frequency panel -->
+        {keywords.length > 0 && (
+          <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6 print-section">
+            <div class="flex items-baseline justify-between mb-5">
+              <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Top Keywords in Competitor Titles</h2>
+              <span class="text-xs text-slate-400 dark:text-slate-500">use these in your listing title and tags</span>
+            </div>
+            <ol class="space-y-2">
+              {keywords.map(({ word, count }) => (
+                <li class="flex items-center gap-3 text-sm">
+                  <span class="text-[#222222] dark:text-slate-200 font-medium w-32 shrink-0 truncate capitalize">{word}</span>
+                  <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-full bg-orange-600 rounded-full" style={`width: ${Math.round((count / maxKwCount) * 100)}%`}></div>
+                  </div>
+                  <span class="text-xs text-slate-400 dark:text-slate-500 tabular-nums w-6 text-right shrink-0">{count}</span>
+                </li>
+              ))}
+            </ol>
+            <p class="mt-4 text-xs text-slate-400 dark:text-slate-600">Based on {results.listings.length} listing titles. Search query and common words stripped.</p>
+          </div>
+        )}
+
+        <!-- Raw stats row -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 print-section">
           {[
             { label: 'Listings found', value: results.totalCount.toLocaleString() },
@@ -370,7 +524,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             { label: 'Price range', value: `${fmt(minPriceFound)} – ${fmt(maxPriceFound)}` },
             ...(results.source !== 'scrape' ? [{ label: 'Avg favorites', value: Math.round(avgFavorites).toLocaleString() }] : []),
           ].map(({ label, value }) => (
-            <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-2 border-t-orange-600 rounded p-4">
+            <div class="stat-card bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-slate-300 dark:border-t-slate-600 rounded p-4">
               <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
               <p class="text-xl font-bold text-[#222222] dark:text-white">{value}</p>
             </div>

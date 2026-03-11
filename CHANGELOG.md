@@ -4,6 +4,22 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.4.0] — 2026-03-11
+
+### Added
+- Market Intelligence panel: Market Verdict, Competition Level, Price Sweet Spot — shown above raw stats
+- Keyword frequency panel: top 15 words from competitor listing titles with proportional bars — use in your own listing title and tags
+- Market Verdict logic: OPPORTUNITY / EMERGING / NICHE / SATURATED based on listing count + avg favorites (API) or count alone (scrape)
+- Competition level: LOW / MEDIUM / HIGH with badge showing total listing count
+- Price Sweet Spot: median of top-favorited listings (API) or overall median (scrape)
+- 8-second fetch timeout on scrape.do requests to prevent Netlify function crashes
+
+### Fixed
+- Reverted `render=true` on scrape.do — was causing Netlify function timeout crashes (10s limit exceeded)
+- Top listings table now sorts by price ascending in scrape mode (favorites all zero — not meaningful)
+
+---
+
 ## [1.3.0] — 2026-03-11
 
 ### Added
