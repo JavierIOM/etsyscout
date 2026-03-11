@@ -1,9 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import * as cheerio from 'cheerio';
+import Anthropic from '@anthropic-ai/sdk';
 
-const SCRAPE_DO_TOKEN = import.meta.env.SCRAPE_DO_TOKEN;
-const ETSY_API_KEY   = import.meta.env.ETSY_API_KEY;
+const SCRAPE_DO_TOKEN   = import.meta.env.SCRAPE_DO_TOKEN;
+const ETSY_API_KEY      = import.meta.env.ETSY_API_KEY;
+const ANTHROPIC_API_KEY = import.meta.env.ANTHROPIC_API_KEY;
 
 // ---- Types ----------------------------------------------------------------
 interface OwnListing {
@@ -261,6 +263,67 @@ const keywordGaps = [...compWordFreq.entries()]
 
 const maxGapCount = keywordGaps.length ? keywordGaps[0].count : 1;
 
+// ---- AI suggestions (Claude) ---------------------------------------------
+interface AISuggestions {
+  improvedTitle: string;
+  tags: string[];
+  explanation: string;
+}
+
+let aiSuggestions: AISuggestions | null = null;
+
+if (ownListing && ANTHROPIC_API_KEY) {
+  try {
+    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+    const trademarkTerms = ['disney', 'mickey', 'minnie', 'marvel', 'lego', 'peppa', 'pokemon', 'barbie'];
+    const hasTrademark = trademarkTerms.some(t => ownListing!.title.toLowerCase().includes(t));
+
+    const prompt = `You are an Etsy SEO expert helping a maker improve their listing.
+
+Current title (${ownListing.title.length} chars, max 140):
+"${ownListing.title}"
+
+Product description snippet:
+"${ownListing.description.slice(0, 300)}"
+
+Competition search: "${searchQuery}" (${totalComp} listings, median price ${sweetSpot > 0 ? fmt(sweetSpot) : 'unknown'})
+
+Keywords that appear frequently in competitor titles but are MISSING from this listing (most common first):
+${keywordGaps.slice(0, 8).map(k => `- ${k.word} (${k.count} competitors use this)`).join('\n')}
+
+Sample competitor titles:
+${compListings.slice(0, 5).map(l => `- ${l.title}`).join('\n')}
+
+${hasTrademark ? 'IMPORTANT: The current title contains trademarked brand names. The improved title must NOT include any brand names (Disney, Mickey, Minnie, Marvel, etc.). Use descriptive alternatives instead.' : ''}
+
+Tasks:
+1. Write an improved Etsy title (max 140 chars) that naturally incorporates the most relevant missing keywords. Keep it readable — not a keyword dump.
+2. Suggest exactly 7 Etsy tag phrases (each max 20 chars). These should be search phrases buyers actually use, not single words.
+3. In one sentence, explain the single most important change you made and why.
+
+Respond with JSON only, no other text:
+{"improvedTitle":"...","tags":["...","...","...","...","...","...","..."],"explanation":"..."}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.improvedTitle && Array.isArray(parsed.tags) && parsed.explanation) {
+        aiSuggestions = parsed as AISuggestions;
+      }
+    }
+  } catch {
+    // AI suggestions are best-effort — fail silently
+  }
+}
+
 // ---- Recommendation engine -----------------------------------------------
 const recommendations: Recommendation[] = [];
 
@@ -500,6 +563,39 @@ const histogram = buildHistogram(compPrices);
             </div>
           </div>
         </div>
+
+        <!-- AI Suggestions -->
+        {aiSuggestions && (
+          <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-orange-600 rounded p-6 space-y-5">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">AI Suggestions</h2>
+              <span class="text-xs text-slate-400 dark:text-slate-500">generated from your listing + {totalComp} competitors</span>
+            </div>
+
+            <!-- Improved title -->
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Suggested Title ({aiSuggestions.improvedTitle.length}/140 chars)</p>
+              <p class="text-sm font-medium text-[#222222] dark:text-white bg-[#FAF7F4] dark:bg-slate-800 rounded px-4 py-3 leading-relaxed border border-[#D9D9D9] dark:border-slate-700">
+                "{aiSuggestions.improvedTitle}"
+              </p>
+              <p class="text-xs text-[#595959] dark:text-slate-400 mt-2 leading-relaxed border-l-2 border-orange-500 pl-3">
+                {aiSuggestions.explanation}
+              </p>
+            </div>
+
+            <!-- Tags -->
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Suggested Tags</p>
+              <div class="flex flex-wrap gap-2">
+                {aiSuggestions.tags.map(tag => (
+                  <span class="px-3 py-1 rounded-full text-xs bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <!-- Recommendations -->
         {recommendations.length > 0 && (

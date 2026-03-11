@@ -4,6 +4,16 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.6.0] — 2026-03-11
+
+### Added
+- Claude AI suggestions in Listing Analyser — generates a specific improved title and 7 suggested tags based on the actual listing + competitor data
+- AI explanation: one sentence describing the key change made and why
+- Uses `claude-haiku-4-5` for fast response within Netlify function timeout
+- Requires `ANTHROPIC_API_KEY` env var in Netlify — degrades gracefully if absent
+
+---
+
 ## [1.5.0] — 2026-03-11
 
 ### Added
