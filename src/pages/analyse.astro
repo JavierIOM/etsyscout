@@ -112,16 +112,30 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
             tags.push(...kws);
           }
         }
-        // Price — prefer GBP offer, ignore USD/EUR variants
-        priceDebug.push(`type=${type} hasOffers=${!!d.offers}`);
-        if (type === 'Offer' || (d.offers && (type === 'Product' || type === 'ProductGroup'))) {
-          const offers = d.offers ?? d;
-          const offerList = Array.isArray(offers) ? offers : [offers];
-          priceDebug.push(`offerList=${JSON.stringify(offerList).slice(0, 200)}`);
-          const gbpOffer = offerList.find((o: any) => o?.priceCurrency === 'GBP') ?? offerList[0];
-          const rawPrice = gbpOffer?.price ?? gbpOffer?.lowPrice ?? gbpOffer?.highPrice;
-          priceDebug.push(`gbpOffer.price=${gbpOffer?.price} lowPrice=${gbpOffer?.lowPrice} rawPrice=${rawPrice}`);
-          if (rawPrice && !price) price = parseFloat(String(rawPrice));
+        // Price extraction — handles Product, Offer, and ProductGroup (variants)
+        priceDebug.push(`type=${type} hasOffers=${!!d.offers} hasVariant=${!!d.hasVariant}`);
+
+        const extractGbpPrice = (offersRaw: any): number => {
+          if (!offersRaw) return 0;
+          const list = Array.isArray(offersRaw) ? offersRaw : [offersRaw];
+          const gbp = list.find((o: any) => o?.priceCurrency === 'GBP') ?? list[0];
+          const raw = gbp?.price ?? gbp?.lowPrice ?? gbp?.highPrice;
+          return raw ? parseFloat(String(raw)) : 0;
+        };
+
+        if (type === 'Offer') {
+          const p = extractGbpPrice(d);
+          if (p && !price) price = p;
+        } else if ((type === 'Product' || type === 'ProductGroup') && d.offers) {
+          const p = extractGbpPrice(d.offers);
+          if (p && !price) price = p;
+          priceDebug.push(`from offers: ${p}`);
+        } else if (type === 'ProductGroup' && d.hasVariant) {
+          // Variant listing — collect all GBP prices from variants, take the max (default/full size)
+          const variants = Array.isArray(d.hasVariant) ? d.hasVariant : [d.hasVariant];
+          const prices = variants.map((v: any) => extractGbpPrice(v.offers)).filter((p: number) => p > 0);
+          priceDebug.push(`variant prices: ${JSON.stringify(prices)}`);
+          if (prices.length && !price) price = Math.max(...prices);
         }
       } catch {}
     });
@@ -129,22 +143,6 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
     // Sales count from page text
     const salesMatch = html.match(/(\d[\d,]*)\s+sales?/i);
     if (salesMatch) salesCount = parseInt(salesMatch[1].replace(',', ''));
-
-    // Price fallback 1: Etsy API-format price object in any key order
-    if (!price) {
-      // Try amount+divisor+GBP in any order within a JSON object
-      const m1 = html.match(/"amount"\s*:\s*(\d+)[^}]{0,80}"divisor"\s*:\s*(\d+)[^}]{0,80}"currency_code"\s*:\s*"GBP"/);
-      const m2 = html.match(/"currency_code"\s*:\s*"GBP"[^}]{0,80}"amount"\s*:\s*(\d+)[^}]{0,80}"divisor"\s*:\s*(\d+)/);
-      if (m1) price = parseInt(m1[1]) / parseInt(m1[2]);
-      else if (m2) price = parseInt(m2[1]) / parseInt(m2[2]);
-    }
-
-    // Price fallback 2: cheerio DOM — find first £XX.XX or £XX in the page
-    if (!price) {
-      const priceEl = $('[data-buy-box-region] [class*="price"], [class*="price-value"], .currency-value').first();
-      const priceText = priceEl.text().replace(/[^0-9.]/g, '');
-      if (priceText) price = parseFloat(priceText);
-    }
 
     return title ? { url, title, price, description, reviewCount, rating, salesCount, tags, priceDebug } : null;
   } catch {
