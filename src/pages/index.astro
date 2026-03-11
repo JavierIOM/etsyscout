@@ -84,9 +84,10 @@ if (query && ETSY_API_KEY) {
       const $ = cheerio.load(html);
       const listings: EtsyListing[] = [];
 
-      // Try JSON-LD structured data first (most reliable)
+      const seenUrls = new Set<string>();
+
+      // JSON-LD structured data — process all matching script tags
       $('script[type="application/ld+json"]').each((_, el) => {
-        if (listings.length > 0) return;
         try {
           const data = JSON.parse($(el).html() ?? '');
           if (data['@type'] === 'ItemList' && Array.isArray(data.itemListElement)) {
@@ -95,9 +96,10 @@ if (query && ETSY_API_KEY) {
               const rawPrice = product.offers?.price ?? product.offers?.lowPrice;
               const url = product.url ?? product['@id'];
               const title = product.name;
-              if (title && url && rawPrice != null) {
+              if (title && url && rawPrice != null && !seenUrls.has(url)) {
                 const priceNum = parseFloat(String(rawPrice));
                 if (!isNaN(priceNum)) {
+                  seenUrls.add(url);
                   listings.push({
                     listing_id: listings.length,
                     title,
@@ -114,28 +116,31 @@ if (query && ETSY_API_KEY) {
         } catch {}
       });
 
-      // DOM fallback — grab listing cards directly
-      if (listings.length === 0) {
-        $('a[href*="/listing/"]').each((_, el) => {
-          const href = $(el).attr('href');
-          if (!href || listings.some((l) => l.url === href)) return;
-          const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
-          const priceText = $(el).closest('[data-listing-id]').find('[class*="price"]').first().text().trim()
-            || $(el).find('[class*="price"]').first().text().trim();
-          const priceMatch = priceText.match(/[\d,.]+/);
-          if (!title || title.length < 5) return;
-          const priceNum = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;
-          listings.push({
-            listing_id: listings.length,
-            title,
-            price: { amount: Math.round(priceNum * 100), divisor: 100, currency_code: 'GBP' },
-            num_favorers: 0,
-            views: 0,
-            url: href.startsWith('http') ? href : `https://www.etsy.com${href}`,
-            quantity: 1,
-          });
+      // DOM scrape — always runs and fills in anything JSON-LD missed
+      $('a[href*="/listing/"]').each((_, el) => {
+        const href = $(el).attr('href');
+        if (!href) return;
+        const fullUrl = href.startsWith('http') ? href : `https://www.etsy.com${href}`;
+        // Normalise — strip query string for dedup
+        const urlKey = fullUrl.split('?')[0];
+        if (seenUrls.has(urlKey)) return;
+        const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
+        if (!title || title.length < 5) return;
+        const priceText = $(el).closest('[data-listing-id]').find('[class*="price"]').first().text().trim()
+          || $(el).find('[class*="price"]').first().text().trim();
+        const priceMatch = priceText.match(/[\d,.]+/);
+        const priceNum = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;
+        seenUrls.add(urlKey);
+        listings.push({
+          listing_id: listings.length,
+          title,
+          price: { amount: Math.round(priceNum * 100), divisor: 100, currency_code: 'GBP' },
+          num_favorers: 0,
+          views: 0,
+          url: fullUrl,
+          quantity: 1,
         });
-      }
+      });
 
       if (listings.length > 0) {
         results.listings = listings;
