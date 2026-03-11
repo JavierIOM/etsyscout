@@ -125,10 +125,15 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
     const salesMatch = html.match(/(\d[\d,]*)\s+sales?/i);
     if (salesMatch) salesCount = parseInt(salesMatch[1].replace(',', ''));
 
-    // Price fallback from page
-    if (!price) {
-      const priceMatch = html.match(/"price"\s*:\s*"?([\d.]+)"?/);
-      if (priceMatch) price = parseFloat(priceMatch[1]);
+    // Price fallback: look for Etsy's embedded listing data (more reliable for variant listings)
+    // Etsy embeds price as {"amount":2000,"divisor":100,"currency_code":"GBP"} in page JSON
+    if (!price || price > 0) {
+      // Prefer the Etsy API-format price object over AggregateOffer lowPrice
+      const embeddedMatch = html.match(/"amount"\s*:\s*(\d+)\s*,\s*"divisor"\s*:\s*(\d+)\s*,\s*"currency_code"\s*:\s*"GBP"/);
+      if (embeddedMatch) {
+        const embPrice = parseInt(embeddedMatch[1]) / parseInt(embeddedMatch[2]);
+        if (embPrice > 0) price = embPrice;
+      }
     }
 
     return title ? { url, title, price, description, reviewCount, rating, salesCount, tags } : null;
