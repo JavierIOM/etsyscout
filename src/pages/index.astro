@@ -13,6 +13,7 @@ interface EtsyListing {
   views: number;
   url: string;
   quantity: number;
+  image?: string;
 }
 
 interface SearchResult {
@@ -73,7 +74,8 @@ if (query && ETSY_API_KEY) {
   // scrape.do fallback — used while Etsy API key is pending
   try {
     const searchUrl = `https://www.etsy.com/uk/search?q=${encodeURIComponent(query)}&ref=search_bar`;
-    const proxyUrl = `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(searchUrl)}&super=true`;
+    // render=true loads the full JS-rendered page for more results; super=true uses residential proxies
+    const proxyUrl = `http://api.scrape.do/?token=${SCRAPE_DO_TOKEN}&url=${encodeURIComponent(searchUrl)}&render=true&super=true`;
 
     const res = await fetch(proxyUrl);
 
@@ -100,6 +102,8 @@ if (query && ETSY_API_KEY) {
                 const priceNum = parseFloat(String(rawPrice));
                 if (!isNaN(priceNum)) {
                   seenUrls.add(url);
+                  const rawImage = product.image;
+                  const image = Array.isArray(rawImage) ? rawImage[0] : rawImage;
                   listings.push({
                     listing_id: listings.length,
                     title,
@@ -108,6 +112,7 @@ if (query && ETSY_API_KEY) {
                     views: 0,
                     url,
                     quantity: 1,
+                    image: typeof image === 'string' ? image : undefined,
                   });
                 }
               }
@@ -126,10 +131,14 @@ if (query && ETSY_API_KEY) {
         if (seenUrls.has(urlKey)) return;
         const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
         if (!title || title.length < 5) return;
-        const priceText = $(el).closest('[data-listing-id]').find('[class*="price"]').first().text().trim()
+        const card = $(el).closest('[data-listing-id]');
+        const priceText = card.find('[class*="price"]').first().text().trim()
           || $(el).find('[class*="price"]').first().text().trim();
         const priceMatch = priceText.match(/[\d,.]+/);
         const priceNum = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : 0;
+        // Image — prefer data-src (lazy-loaded) then src, from etsystatic CDN
+        const imgEl = card.find('img[src*="etsystatic"], img[data-src*="etsystatic"]').first();
+        const image = imgEl.attr('data-src') || imgEl.attr('src');
         seenUrls.add(urlKey);
         listings.push({
           listing_id: listings.length,
@@ -139,6 +148,7 @@ if (query && ETSY_API_KEY) {
           views: 0,
           url: fullUrl,
           quantity: 1,
+          image,
         });
       });
 
@@ -395,6 +405,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
             <table class="w-full text-sm">
               <thead class="border-b border-[#D9D9D9] dark:border-slate-800">
                 <tr class="text-left">
+                  <th class="px-3 py-3 w-14 print:hidden"></th>
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider">Title</th>
                   <th class="px-6 py-3 text-xs text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider text-right">Price</th>
                   {results.source !== 'scrape' && (
@@ -408,6 +419,22 @@ const fmt = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', c
               <tbody class="divide-y divide-[#D9D9D9] dark:divide-slate-800">
                 {topListings.map((listing, i) => (
                   <tr class="hover:bg-[#FAF7F4] dark:hover:bg-slate-800/50 transition-colors">
+                    <td class="px-3 py-2 print:hidden">
+                      <a href={listing.url} target="_blank" rel="noopener noreferrer" tabindex="-1">
+                        {listing.image ? (
+                          <img
+                            src={listing.image}
+                            alt=""
+                            width="48"
+                            height="48"
+                            class="w-12 h-12 object-cover rounded border border-[#D9D9D9] dark:border-slate-700"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div class="w-12 h-12 rounded border border-[#D9D9D9] dark:border-slate-700 bg-slate-100 dark:bg-slate-800"></div>
+                        )}
+                      </a>
+                    </td>
                     <td class="px-6 py-3">
                       <a
                         href={listing.url}

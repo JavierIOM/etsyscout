@@ -4,6 +4,17 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.3.0] — 2026-03-11
+
+### Added
+- Listing thumbnails in results table — sourced from Etsy CDN (etsystatic.com); graceful fallback placeholder if no image found
+- `render=true` added to scrape.do request to load full JS-rendered page for more results
+
+### Changed
+- JSON-LD and DOM scrapers now both always run and merge results (deduped by URL) — previously DOM was skipped if JSON-LD found anything
+
+---
+
 ## [1.2.0] — 2026-03-11
 
 ### Added
