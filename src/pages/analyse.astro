@@ -17,6 +17,7 @@ interface OwnListing {
   rating: number;
   salesCount: number;
   tags: string[];
+  priceDebug: string[];
 }
 
 interface CompListing {
@@ -91,6 +92,7 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
 
     let title = '', description = '', price = 0, reviewCount = 0, rating = 0, salesCount = 0;
     const tags: string[] = [];
+    const priceDebug: string[] = [];
 
     $('script[type="application/ld+json"]').each((_, el) => {
       try {
@@ -111,11 +113,14 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
           }
         }
         // Price — prefer GBP offer, ignore USD/EUR variants
+        priceDebug.push(`type=${type} hasOffers=${!!d.offers}`);
         if (type === 'Offer' || (d.offers && (type === 'Product' || type === 'ProductGroup'))) {
           const offers = d.offers ?? d;
           const offerList = Array.isArray(offers) ? offers : [offers];
+          priceDebug.push(`offerList=${JSON.stringify(offerList).slice(0, 200)}`);
           const gbpOffer = offerList.find((o: any) => o?.priceCurrency === 'GBP') ?? offerList[0];
           const rawPrice = gbpOffer?.price ?? gbpOffer?.lowPrice ?? gbpOffer?.highPrice;
+          priceDebug.push(`gbpOffer.price=${gbpOffer?.price} lowPrice=${gbpOffer?.lowPrice} rawPrice=${rawPrice}`);
           if (rawPrice && !price) price = parseFloat(String(rawPrice));
         }
       } catch {}
@@ -141,13 +146,7 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
       if (priceText) price = parseFloat(priceText);
     }
 
-    // Price fallback 3: first £XX.XX pattern in HTML
-    if (!price) {
-      const gbpMatch = html.match(/£\s*(\d+(?:\.\d{2})?)/);
-      if (gbpMatch) price = parseFloat(gbpMatch[1]);
-    }
-
-    return title ? { url, title, price, description, reviewCount, rating, salesCount, tags } : null;
+    return title ? { url, title, price, description, reviewCount, rating, salesCount, tags, priceDebug } : null;
   } catch {
     return null;
   }
@@ -596,6 +595,14 @@ const histogram = buildHistogram(compPrices);
             </div>
           </div>
         </div>
+
+        <!-- Price debug (temporary) -->
+        {ownListing.priceDebug.length > 0 && (
+          <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded p-4 text-xs font-mono text-slate-600 dark:text-slate-400 space-y-1">
+            <p class="font-bold text-slate-800 dark:text-slate-200 mb-2">Price debug:</p>
+            {ownListing.priceDebug.map(line => <p>{line}</p>)}
+          </div>
+        )}
 
         <!-- AI Suggestions -->
         {aiSuggestions && (
