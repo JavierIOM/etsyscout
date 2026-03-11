@@ -17,7 +17,6 @@ interface OwnListing {
   rating: number;
   salesCount: number;
   tags: string[];
-  priceDebug: string[];
 }
 
 interface CompListing {
@@ -92,7 +91,6 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
 
     let title = '', description = '', price = 0, reviewCount = 0, rating = 0, salesCount = 0;
     const tags: string[] = [];
-    const priceDebug: string[] = [];
 
     $('script[type="application/ld+json"]').each((_, el) => {
       try {
@@ -113,7 +111,6 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
           }
         }
         // Price extraction — handles Product, Offer, and ProductGroup (variants)
-        priceDebug.push(`type=${type} hasOffers=${!!d.offers} hasVariant=${!!d.hasVariant}`);
 
         const extractGbpPrice = (offersRaw: any): number => {
           if (!offersRaw) return 0;
@@ -129,12 +126,10 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
         } else if ((type === 'Product' || type === 'ProductGroup') && d.offers) {
           const p = extractGbpPrice(d.offers);
           if (p && !price) price = p;
-          priceDebug.push(`from offers: ${p}`);
         } else if (type === 'ProductGroup' && d.hasVariant) {
           // Variant listing — collect all GBP prices from variants, take the max (default/full size)
           const variants = Array.isArray(d.hasVariant) ? d.hasVariant : [d.hasVariant];
           const prices = variants.map((v: any) => extractGbpPrice(v.offers)).filter((p: number) => p > 0);
-          priceDebug.push(`variant prices: ${JSON.stringify(prices)}`);
           if (prices.length && !price) price = Math.max(...prices);
         }
       } catch {}
@@ -144,7 +139,7 @@ async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
     const salesMatch = html.match(/(\d[\d,]*)\s+sales?/i);
     if (salesMatch) salesCount = parseInt(salesMatch[1].replace(',', ''));
 
-    return title ? { url, title, price, description, reviewCount, rating, salesCount, tags, priceDebug } : null;
+    return title ? { url, title, price, description, reviewCount, rating, salesCount, tags } : null;
   } catch {
     return null;
   }
@@ -593,14 +588,6 @@ const histogram = buildHistogram(compPrices);
             </div>
           </div>
         </div>
-
-        <!-- Price debug (temporary) -->
-        {ownListing.priceDebug.length > 0 && (
-          <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded p-4 text-xs font-mono text-slate-600 dark:text-slate-400 space-y-1">
-            <p class="font-bold text-slate-800 dark:text-slate-200 mb-2">Price debug:</p>
-            {ownListing.priceDebug.map(line => <p>{line}</p>)}
-          </div>
-        )}
 
         <!-- AI Suggestions -->
         {aiSuggestions && (
