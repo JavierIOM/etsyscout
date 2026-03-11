@@ -295,11 +295,15 @@ if (ownListing) {
 
   // Title length
   if (ownListing.title.length < 80) {
+    const gapSuggestions = keywordGaps.slice(0, 4).map(k => k.word).join(', ');
+    const suggestionText = gapSuggestions
+      ? `Consider adding some of your missing keywords: "${gapSuggestions}" — these appear in competitor titles and each one is a search term you are currently invisible for.`
+      : 'Add 2–3 specific use-case or buyer-intent phrases relevant to your product to fill the remaining characters.';
     recommendations.push({
       type: 'title', severity: 'medium',
       heading: 'Title is shorter than optimal',
-      detail: `Your title is ${ownListing.title.length} characters. Etsy allows 140 and the algorithm rewards titles that use relevant keywords across the full length.`,
-      suggestion: 'Add 2–3 specific use-case or buyer-intent phrases at the end, e.g. "Hearing Awareness Gift, Deaf Community, Choose Your Colour".',
+      detail: `Your title is ${ownListing.title.length} characters. Etsy allows 140 and the algorithm rewards titles that use the full length with relevant keywords.`,
+      suggestion: suggestionText,
     });
   }
 
