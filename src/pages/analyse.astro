@@ -192,7 +192,7 @@ async function scrapeCompetition(query: string): Promise<CompListing[]> {
       const urlKey  = fullUrl.split('?')[0];
       if (seen.has(urlKey)) return;
       const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
-      if (!title || title.length < 5 || /loading|skeleton|placeholder|best seller/i.test(title)) return;
+      if (!title || title.length < 5 || /loading|skeleton|placeholder|best\s*seller/i.test(title)) return;
       const card = $(el).closest('[data-listing-id]');
       const priceText = card.find('[class*="price"]').first().text().trim();
       const priceMatch = priceText.match(/[\d,.]+/);

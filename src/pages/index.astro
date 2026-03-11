@@ -132,7 +132,7 @@ if (query && ETSY_API_KEY) {
         const title = $(el).find('h3, p').first().text().trim() || $(el).text().trim();
         // Filter skeleton/placeholder text Etsy injects before JS hydration
         if (!title || title.length < 5) return;
-        if (/loading|skeleton|placeholder|best seller/i.test(title)) return;
+        if (/loading|skeleton|placeholder|best\s*seller/i.test(title)) return;
         const card = $(el).closest('[data-listing-id]');
         const priceText = card.find('[class*="price"]').first().text().trim()
           || $(el).find('[class*="price"]').first().text().trim();
