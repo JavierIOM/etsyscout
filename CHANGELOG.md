@@ -4,6 +4,13 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.9.0] — 2026-03-12
+
+### Fixed
+- Claude AI suggestions broken — corrected model ID from `claude-haiku-4-5` to `claude-haiku-4-5-20251001` (Anthropic API now requires fully-qualified model IDs)
+
+---
+
 ## [1.8.0] — 2026-03-11
 
 ### Fixed
