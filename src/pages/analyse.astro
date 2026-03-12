@@ -331,8 +331,8 @@ Respond with JSON only, no other text:
 
     const response = await anthropic.messages.create({
       // model: 'claude-haiku-4-5-20251001', // fast, cheap — safe within Netlify 10s timeout
-      // model: 'claude-sonnet-4-6',      // better quality, borderline on timeout
-      model: 'claude-opus-4-6',        // best quality, will likely timeout on Netlify
+      model: 'claude-sonnet-4-6',      // better quality, borderline on timeout
+      // model: 'claude-opus-4-6',        // best quality, will likely timeout on Netlify
       max_tokens: 700,
       messages: [{ role: 'user', content: prompt }],
     });
