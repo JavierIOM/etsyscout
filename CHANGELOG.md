@@ -4,6 +4,13 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.10.0] — 2026-04-16
+
+### Added
+- "Copy tags" button on the keyword frequency panel — copies top 13 keywords to clipboard in comma-separated format, ready to paste into Etsy tags
+
+---
+
 ## [1.9.0] — 2026-03-12
 
 ### Fixed
