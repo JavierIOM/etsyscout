@@ -4,6 +4,18 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.11.0] — 2026-04-16
+
+### Added
+- New `/shop` page — Shop Audit tool: enter your Etsy shop name to get a full audit of all active listings
+- Rules-based analysis per listing: title length, tag count (out of 13), description length
+- Per-listing score (0–100) with issues (red) and warnings (amber) flagged inline
+- Listings sorted worst-first so the most urgent fixes are at the top
+- "Analyse" button per listing links directly to the Listing Analyser with the URL pre-filled
+- Shop Audit added to nav on Market Search and Listing Analyser pages
+
+---
+
 ## [1.10.0] — 2026-04-16
 
 ### Added

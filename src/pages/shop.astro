@@ -1,0 +1,252 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const ETSY_API_KEY = import.meta.env.ETSY_API_KEY;
+
+interface EtsyListing {
+  listing_id: number;
+  title: string;
+  description: string;
+  tags: string[];
+  price: { amount: number; divisor: number; currency_code: string };
+  url: string;
+  num_favorers: number;
+  views: number;
+}
+
+interface ListingAnalysis {
+  issues: string[];
+  warnings: string[];
+  titleLen: number;
+  tagCount: number;
+  descLen: number;
+  score: number;
+}
+
+function analyse(l: EtsyListing): ListingAnalysis {
+  const issues: string[] = [];
+  const warnings: string[] = [];
+
+  const titleLen = l.title.length;
+  if (titleLen < 40)       issues.push(`Title very short (${titleLen} chars — aim for 100+)`);
+  else if (titleLen < 80)  warnings.push(`Title short (${titleLen} chars — aim for 100+)`);
+
+  const tagCount = l.tags.length;
+  if (tagCount < 10)       issues.push(`Only ${tagCount}/13 tags — leaving search visibility on the table`);
+  else if (tagCount < 13)  warnings.push(`${tagCount}/13 tags used — add ${13 - tagCount} more`);
+
+  const descLen = (l.description ?? '').replace(/\n/g, ' ').trim().length;
+  if (descLen < 100)       issues.push(`Description very short (${descLen} chars)`);
+  else if (descLen < 300)  warnings.push(`Description could be more detailed (${descLen} chars)`);
+
+  let score = 100;
+  score -= issues.length * 25;
+  score -= warnings.length * 10;
+  score = Math.max(0, Math.min(100, score));
+
+  return { issues, warnings, titleLen, tagCount, descLen, score };
+}
+
+const shopName = Astro.url.searchParams.get('name')?.trim() ?? '';
+
+let shop: any = null;
+let listings: EtsyListing[] = [];
+let analyses: ListingAnalysis[] = [];
+let fetchError = '';
+
+if (shopName && ETSY_API_KEY) {
+  try {
+    const shopRes = await fetch(
+      `https://openapi.etsy.com/v3/application/shops?shop_name=${encodeURIComponent(shopName)}`,
+      { headers: { 'x-api-key': ETSY_API_KEY }, signal: AbortSignal.timeout(8000) }
+    );
+    const shopData = await shopRes.json();
+
+    if (!shopData.results?.length) {
+      fetchError = `Shop "${shopName}" not found.`;
+    } else {
+      shop = shopData.results[0];
+      const listRes = await fetch(
+        `https://openapi.etsy.com/v3/application/shops/${shop.shop_id}/listings/active?limit=100`,
+        { headers: { 'x-api-key': ETSY_API_KEY }, signal: AbortSignal.timeout(8000) }
+      );
+      const listData = await listRes.json();
+      listings = listData.results ?? [];
+      analyses = listings.map(analyse);
+    }
+  } catch {
+    fetchError = 'Failed to fetch shop data. Try again.';
+  }
+}
+
+// Sort by score ascending (worst first) so problems are obvious
+const sorted = listings
+  .map((l, i) => ({ listing: l, analysis: analyses[i] }))
+  .sort((a, b) => a.analysis.score - b.analysis.score);
+
+const fmt = (p: { amount: number; divisor: number }) =>
+  `£${(p.amount / p.divisor).toFixed(2)}`;
+
+const avgScore = analyses.length
+  ? Math.round(analyses.reduce((s, a) => s + a.score, 0) / analyses.length)
+  : 0;
+
+const issueCount  = analyses.reduce((s, a) => s + a.issues.length, 0);
+const warningCount = analyses.reduce((s, a) => s + a.warnings.length, 0);
+
+function scoreBadge(s: number) {
+  if (s >= 80) return 'bg-green-500/10 text-green-400 border border-green-500/30';
+  if (s >= 50) return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30';
+  return 'bg-red-500/10 text-red-400 border border-red-500/30';
+}
+
+function tagBadge(n: number) {
+  if (n === 13) return 'bg-green-500/10 text-green-400 border border-green-500/30';
+  if (n >= 10)  return 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30';
+  return 'bg-red-500/10 text-red-400 border border-red-500/30';
+}
+---
+
+<Layout title="Shop Audit — Etsy Scout">
+  <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-[#222222] dark:text-white tracking-tight">Shop Audit</h1>
+        {shop && (
+          <p class="text-sm text-slate-400 mt-0.5">
+            <a href={shop.url} target="_blank" rel="noopener noreferrer" class="hover:text-orange-500 transition-colors">{shop.shop_name}</a>
+            &nbsp;&mdash;&nbsp;{shop.listing_active_count} active listings
+          </p>
+        )}
+      </div>
+      <nav class="flex gap-4 text-sm text-slate-400">
+        <a href="/" class="hover:text-orange-500 transition-colors">Market Search</a>
+        <a href="/analyse" class="hover:text-orange-500 transition-colors">Listing Analyser</a>
+        <a href="/shop" class="text-orange-500 font-medium">Shop Audit</a>
+      </nav>
+    </div>
+
+    <!-- Shop name form -->
+    <form method="GET" class="flex gap-3">
+      <input
+        type="text"
+        name="name"
+        value={shopName}
+        placeholder="Enter your Etsy shop name"
+        class="flex-1 bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-700 rounded px-4 py-2.5 text-sm text-[#222222] dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-orange-500"
+      />
+      <button
+        type="submit"
+        class="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2.5 rounded transition-colors"
+      >
+        Audit
+      </button>
+    </form>
+
+    {fetchError && (
+      <p class="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-4 py-3">{fetchError}</p>
+    )}
+
+    {!ETSY_API_KEY && (
+      <p class="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-4 py-3">
+        No Etsy API key configured. Add <code class="font-mono">ETSY_API_KEY</code> to your Netlify environment variables.
+      </p>
+    )}
+
+    {shop && analyses.length > 0 && (
+      <>
+        <!-- Summary row -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Overall score', value: `${avgScore}/100`, cls: scoreBadge(avgScore) },
+            { label: 'Active listings', value: listings.length.toString(), cls: '' },
+            { label: 'Issues', value: issueCount.toString(), cls: issueCount > 0 ? 'text-red-400' : 'text-green-400' },
+            { label: 'Warnings', value: warningCount.toString(), cls: warningCount > 0 ? 'text-yellow-400' : 'text-green-400' },
+          ].map(({ label, value, cls }) => (
+            <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 border-t-4 border-t-orange-600 rounded p-4">
+              <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+              <p class={`text-2xl font-bold ${cls || 'text-[#222222] dark:text-white'}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+
+        <!-- Listings table -->
+        <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded overflow-hidden">
+          <div class="px-6 py-4 border-b border-[#D9D9D9] dark:border-slate-800 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-[#595959] dark:text-slate-300 uppercase tracking-wider">Listings — worst first</h2>
+            <span class="text-xs text-slate-400">Click Analyse for AI title, tag and description suggestions</span>
+          </div>
+          <div class="divide-y divide-[#D9D9D9] dark:divide-slate-800">
+            {sorted.map(({ listing, analysis }) => (
+              <div class="px-6 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                <div class="flex items-start gap-4">
+
+                  <!-- Score badge -->
+                  <div class={`shrink-0 text-center rounded px-2.5 py-1.5 text-xs font-bold tabular-nums min-w-[3rem] ${scoreBadge(analysis.score)}`}>
+                    {analysis.score}
+                  </div>
+
+                  <!-- Title + issues -->
+                  <div class="flex-1 min-w-0">
+                    <a
+                      href={listing.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-sm font-medium text-[#222222] dark:text-slate-200 hover:text-orange-500 dark:hover:text-orange-400 transition-colors line-clamp-2"
+                      title={listing.title}
+                    >
+                      {listing.title}
+                    </a>
+
+                    <!-- Issues & warnings -->
+                    {(analysis.issues.length > 0 || analysis.warnings.length > 0) && (
+                      <ul class="mt-2 space-y-0.5">
+                        {analysis.issues.map(issue => (
+                          <li class="text-xs text-red-400 flex items-start gap-1.5">
+                            <span class="shrink-0 mt-0.5">&#x2715;</span>
+                            {issue}
+                          </li>
+                        ))}
+                        {analysis.warnings.map(warning => (
+                          <li class="text-xs text-yellow-400 flex items-start gap-1.5">
+                            <span class="shrink-0 mt-0.5">&#x25B2;</span>
+                            {warning}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {analysis.issues.length === 0 && analysis.warnings.length === 0 && (
+                      <p class="mt-1 text-xs text-green-400">No issues found</p>
+                    )}
+                  </div>
+
+                  <!-- Right column: price, tags, action -->
+                  <div class="shrink-0 flex flex-col items-end gap-2 text-right">
+                    <span class="text-sm font-semibold text-[#222222] dark:text-white">{fmt(listing.price)}</span>
+                    <span class={`text-xs font-medium rounded px-2 py-0.5 tabular-nums ${tagBadge(analysis.tagCount)}`}>
+                      {analysis.tagCount}/13 tags
+                    </span>
+                    <a
+                      href={`/analyse?url=${encodeURIComponent(listing.url)}`}
+                      class="text-xs text-orange-600 hover:text-orange-500 border border-orange-600 hover:border-orange-500 rounded px-2.5 py-1 transition-colors whitespace-nowrap"
+                    >
+                      Analyse
+                    </a>
+                  </div>
+
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )}
+
+    {shopName && !shop && !fetchError && (
+      <p class="text-sm text-slate-400">Loading...</p>
+    )}
+
+  </div>
+</Layout>
