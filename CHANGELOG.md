@@ -4,6 +4,23 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.12.0] — 2026-04-16
+
+### Added
+- Listing Analyser now fetches own listing data via the Etsy API (title, description, tags, price, reviews) — faster and more reliable than scraping
+- Current tags displayed in the "Your Listing" summary card with unused slot count highlighted
+- AI tag suggestions now show exactly how many slots they fill ("brings you to X/13")
+
+### Changed
+- AI is now told about existing tags and only suggests NEW ones to fill remaining slots — no more duplicate suggestions
+- Tag suggestion count is dynamic: always fills up to the 13-tag limit exactly
+- Reverted AI model to `claude-haiku-4-5-20251001` — Sonnet was hitting Netlify's 10s timeout
+
+### Fixed
+- Listing Analyser no longer requires `SCRAPE_DO_TOKEN` if `ETSY_API_KEY` is set — falls back to scrape.do only if API unavailable
+
+---
+
 ## [1.11.0] — 2026-04-16
 
 ### Added

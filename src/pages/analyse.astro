@@ -81,6 +81,42 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
 }
 
+// ---- Fetch own listing via Etsy API ---------------------------------------
+async function fetchOwnListingViaApi(listingId: string): Promise<OwnListing | null> {
+  if (!ETSY_API_KEY) return null;
+  try {
+    const [listingRes, reviewsRes] = await Promise.all([
+      fetch(`https://openapi.etsy.com/v3/application/listings/${listingId}`,
+        { headers: { 'x-api-key': ETSY_API_KEY }, signal: AbortSignal.timeout(8000) }),
+      fetch(`https://openapi.etsy.com/v3/application/listings/${listingId}/reviews?limit=25`,
+        { headers: { 'x-api-key': ETSY_API_KEY }, signal: AbortSignal.timeout(8000) }),
+    ]);
+    if (!listingRes.ok) return null;
+    const d = await listingRes.json();
+    let reviewCount = 0, rating = 0;
+    if (reviewsRes.ok) {
+      const rd = await reviewsRes.json();
+      reviewCount = rd.count ?? 0;
+      if (rd.results?.length) {
+        const ratings = rd.results.map((r: any) => r.rating).filter(Boolean);
+        rating = ratings.length ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length : 0;
+      }
+    }
+    return {
+      url: d.url ?? `https://www.etsy.com/listing/${listingId}`,
+      title: d.title ?? '',
+      price: d.price ? d.price.amount / d.price.divisor : 0,
+      description: d.description ?? '',
+      reviewCount,
+      rating,
+      salesCount: 0,
+      tags: Array.isArray(d.tags) ? d.tags : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ---- Scrape own listing ---------------------------------------------------
 async function scrapeOwnListing(url: string): Promise<OwnListing | null> {
   try {
@@ -223,27 +259,27 @@ async function scrapeCompetition(query: string): Promise<CompListing[]> {
 }
 
 // ---- Main fetch logic -----------------------------------------------------
-if (inputUrl && SCRAPE_DO_TOKEN) {
+if (inputUrl && (ETSY_API_KEY || SCRAPE_DO_TOKEN)) {
   const listingId = extractListingIdFromUrl(inputUrl);
   if (!listingId) {
     fetchError = 'That does not look like a valid Etsy listing URL.';
   } else {
-    // Scrape own listing first to get the title, then build search query
-    ownListing = await scrapeOwnListing(inputUrl);
+    // Try API first (more reliable), fall back to scrape.do
+    ownListing = await fetchOwnListingViaApi(listingId);
+    if (!ownListing && SCRAPE_DO_TOKEN) {
+      ownListing = await scrapeOwnListing(inputUrl);
+    }
 
     if (!ownListing) {
       fetchError = 'Could not fetch listing details — try again in a moment.';
     } else {
-      // Derive competition search query from listing title (first 4 meaningful tokens)
       const titleTokens = tokenise(ownListing.title);
       searchQuery = titleTokens.slice(0, 4).join(' ');
-
-      // Fetch competition in parallel with nothing else to do now
       compListings = await scrapeCompetition(searchQuery);
     }
   }
-} else if (inputUrl && !SCRAPE_DO_TOKEN) {
-  fetchError = 'SCRAPE_DO_TOKEN is not configured.';
+} else if (inputUrl) {
+  fetchError = 'No Etsy API key or SCRAPE_DO_TOKEN configured.';
 }
 
 // ---- Analysis -------------------------------------------------------------
@@ -301,6 +337,9 @@ if (ownListing && ANTHROPIC_API_KEY) {
     const trademarkTerms = ['disney', 'mickey', 'minnie', 'marvel', 'lego', 'peppa', 'pokemon', 'barbie'];
     const hasTrademark = trademarkTerms.some(t => ownListing!.title.toLowerCase().includes(t));
 
+    const existingTags = ownListing.tags;
+    const tagsToSuggest = Math.max(1, 13 - existingTags.length);
+
     const prompt = `You are an Etsy SEO expert helping a maker improve their listing.
 
 Current title (${ownListing.title.length} chars, max 140):
@@ -308,6 +347,9 @@ Current title (${ownListing.title.length} chars, max 140):
 
 Product description snippet:
 "${ownListing.description.slice(0, 400)}"
+
+Existing tags (${existingTags.length}/13 used):
+${existingTags.length > 0 ? existingTags.map(t => `- "${t}"`).join('\n') : '- (none)'}
 
 Competition search: "${searchQuery}" (${totalComp} listings, median price ${sweetSpot > 0 ? fmt(sweetSpot) : 'unknown'})
 
@@ -320,18 +362,18 @@ ${compListings.slice(0, 5).map(l => `- ${l.title}`).join('\n')}
 ${hasTrademark ? 'IMPORTANT: The current title contains trademarked brand names. The improved title must NOT include any brand names (Disney, Mickey, Minnie, Marvel, etc.). Use descriptive alternatives instead.\n' : ''}
 Tasks:
 1. Write an improved Etsy title (max 140 chars) that naturally incorporates the most relevant missing keywords. Keep it readable — not a keyword dump.
-2. Suggest exactly 7 Etsy tag phrases (each max 20 chars). These should be search phrases buyers actually use, not single words.
+2. Suggest exactly ${tagsToSuggest} NEW Etsy tag phrases (each max 20 chars) to ADD to the existing tags above. Do not repeat any existing tag. These should be search phrases buyers actually use, not single words.
 3. In one sentence, explain the single most important change you made and why.
 ${missingDescElements.length > 0 ? `4. The description is missing: ${missingDescElements.join(', ')}. Write 4 specific example bullet points the seller should add, based on what you know about this type of product. Be specific and practical, not generic. Format each as a short "Label: value" pair (e.g. "Size: approx 25cm wide").` : ''}
 ${priceRatio !== null && priceRatio < 0.7 ? `5. The listing is priced at ${fmt(ownListing.price)}, which is below the market median of ${fmt(sweetSpot)}. Write one sentence of description copy that helps justify this as good value without sounding desperate.` : ''}
 ${priceRatio !== null && priceRatio > 1.3 ? `5. The listing is priced at ${fmt(ownListing.price)}, which is above the market median of ${fmt(sweetSpot)}. Write one sentence of description copy that justifies the premium (e.g. quality, customisation, what's included).` : ''}
 
 Respond with JSON only, no other text:
-{"improvedTitle":"...","tags":["...","...","...","...","...","...","..."],"explanation":"...","descriptionBullets":["...","...","...","..."],"pricingCopy":"..."}`;
+{"improvedTitle":"...","tags":["..."],"explanation":"...","descriptionBullets":["...","...","...","..."],"pricingCopy":"..."}`;
 
     const response = await anthropic.messages.create({
-      // model: 'claude-haiku-4-5-20251001', // fast, cheap — safe within Netlify 10s timeout
-      model: 'claude-sonnet-4-6',      // better quality, borderline on timeout
+      model: 'claude-haiku-4-5-20251001', // fast, cheap — safe within Netlify 10s timeout
+      // model: 'claude-sonnet-4-6',      // better quality, borderline on timeout
       // model: 'claude-opus-4-6',        // best quality, will likely timeout on Netlify
       max_tokens: 700,
       messages: [{ role: 'user', content: prompt }],
@@ -572,7 +614,7 @@ const histogram = buildHistogram(compPrices);
         <div class="bg-white dark:bg-slate-900 border border-[#D9D9D9] dark:border-slate-800 rounded p-6">
           <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Your Listing</p>
           <h2 class="text-base font-semibold text-[#222222] dark:text-white leading-snug mb-4">{ownListing.title}</h2>
-          <div class="flex flex-wrap gap-6 text-sm">
+          <div class="flex flex-wrap gap-6 text-sm mb-5">
             <div>
               <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5">Price</p>
               <p class="font-bold text-[#222222] dark:text-white">{ownListing.price > 0 ? fmt(ownListing.price) : '—'}</p>
@@ -590,6 +632,26 @@ const histogram = buildHistogram(compPrices);
               <p class="font-bold text-[#222222] dark:text-white">"{searchQuery}"</p>
             </div>
           </div>
+          {ownListing.tags.length > 0 && (
+            <div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                Current tags ({ownListing.tags.length}/13)
+                {ownListing.tags.length < 13 && (
+                  <span class="text-amber-500 ml-2">{13 - ownListing.tags.length} slots unused</span>
+                )}
+              </p>
+              <div class="flex flex-wrap gap-2">
+                {ownListing.tags.map(tag => (
+                  <span class="px-2.5 py-1 rounded-full text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[#595959] dark:text-slate-300">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {ownListing.tags.length === 0 && (
+            <p class="text-xs text-red-400">No tags found — all 13 slots unused</p>
+          )}
         </div>
 
         <!-- AI Suggestions -->
@@ -613,7 +675,9 @@ const histogram = buildHistogram(compPrices);
 
             <!-- Tags -->
             <div>
-              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Suggested Tags</p>
+              <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                Tags to add ({aiSuggestions.tags.length} new — brings you to {Math.min(13, ownListing.tags.length + aiSuggestions.tags.length)}/13)
+              </p>
               <div class="flex flex-wrap gap-2">
                 {aiSuggestions.tags.map(tag => (
                   <span class="px-3 py-1 rounded-full text-xs bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300">
