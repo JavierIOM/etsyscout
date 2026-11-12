@@ -4,6 +4,17 @@ All notable changes to Etsy Scout are documented here.
 
 ---
 
+## [1.13.0] - 2026-11-12
+
+### Added
+- `mcp/etsy-mcp.mjs`: a zero-dependency MCP server that gives Claude Desktop read-only Etsy tools (search listings, get a listing, find a shop, shop listings, shop reviews, raw GET)
+- The server loads `ETSY_API_KEY` from the dotenv file named by `ETSY_MCP_ENV_FILE`, so the key never goes in the Claude config
+
+### Fixed
+- README and `.env.example` said the shared secret was not needed. `ETSY_API_KEY` must be `keystring:sharedsecret`
+
+---
+
 ## [1.12.0] — 2026-04-16
 
 ### Added
